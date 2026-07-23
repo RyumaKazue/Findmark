@@ -1,0 +1,45 @@
+{
+  "extensionDescription": {
+    "description": "Extension description",
+    "message": "別名(エイリアス)を付けて探せるブックマーク検索。辞書に頼らず自分だけの呼び名で素早く見つかる。外部通信ゼロで安心。"
+  },
+  "extensionName": {
+    "description": "Extension name",
+    "message": "Findmark"
+  },
+  "toggleTheme": {
+    "message": "テーマを切り替え"
+  },
+  "injectButton": {
+    "message": "クリックしてコンテンツスクリプトを挿入"
+  },
+  "greeting": {
+    "description": "挨拶メッセージ",
+    "message": "こんにちは、私の名前は $NAME$ です",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "山田 太郎"
+      }
+    }
+  },
+  "hello": {
+    "description": "プレースホルダーの例",
+    "message": "こんにちは $1"
+  },
+  "displayErrorInfo": {
+    "message": "エラーが発生しました"
+  },
+  "displayErrorDescription": {
+    "message": "申し訳ありません。ページの読み込み中に問題が発生しました。"
+  },
+  "displayErrorDetailsInfo": {
+    "message": "エラー詳細:"
+  },
+  "displayErrorUnknownErrorInfo": {
+    "message": "不明なエラー"
+  },
+  "displayErrorReset": {
+    "message": "再実行"
+  }
+}

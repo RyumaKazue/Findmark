@@ -1,11 +1,11 @@
 {
   "extensionDescription": {
     "description": "Extension description",
-    "message": "Chrome extension boilerplate developed with Vite, React and Typescript"
+    "message": "A bookmark search extension you find by your own aliases. No dictionaries—just your own names for instant results. Zero external communication."
   },
   "extensionName": {
     "description": "Extension name",
-    "message": "Chrome extension boilerplate"
+    "message": "Findmark"
   },
   "toggleTheme": {
     "message": "Toggle theme"
