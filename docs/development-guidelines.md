@@ -155,7 +155,7 @@ PRテンプレート(`.github/pull_request_template.md`)に従う。レビュー
 
 ## テスト戦略
 
-> **⚠️ テスト基盤は現状未導入**: 本セクションは今後整備する方針を示すロードマップである。現状 `vitest` の `test` スクリプトは `chrome-extension` のみに存在し、`packages/shared` / `packages/storage` には未設定、`turbo.json` にも `test` タスクがなく、CIにもテスト実行ステップがない。実装着手時に「`packages/shared`・`packages/storage` へ vitest 追加 → `turbo.json` に `test` タスク追加 → CIへ組込み」を整備タスクとする。**以下のカバレッジ目標・コマンドは基盤導入後の目標値**であり、現時点で `pnpm test` は存在しない。
+> **✅ ユニットテスト基盤は整備済み(U2 test-infrastructure, 2026-07-24)**: `packages/shared` / `packages/storage` に vitest(`^4`)を導入し、両 `package.json` に `"test": "vitest run"` と `vitest.config.ts` を追加。`turbo.json` に `test` タスク、ルートに `"test": "turbo test"` を追加し、`pnpm test` が実行可能。CI は `.github/workflows/test.yml`(`pull_request`)で自動実行する。**以下のカバレッジ目標(80%)は「目標値」として各 `vitest.config.ts` にコメントで保持**しており、実ロジックが揃う U3 以降で `coverage.thresholds` を有効化して CI gate 化する。
 
 テストピラミッド: ユニット多め・統合中程度・E2E少数。ドメインロジック(`packages/shared`, `packages/storage`)を厚く、UIはE2Eで主要導線を担保する。
 
