@@ -1,15 +1,16 @@
 import { fixupConfigRules } from '@eslint/compat';
 import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
+import { defineConfig } from 'eslint/config';
 import { flatConfigs as importXFlatConfig } from 'eslint-plugin-import-x';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import reactPlugin from 'eslint-plugin-react';
 import { browser, es2020, node } from 'globals';
-import { config, configs as tsConfigs, parser as tsParser } from 'typescript-eslint';
+import { configs as tsConfigs, parser as tsParser } from 'typescript-eslint';
 import type { FixupConfigArray } from '@eslint/compat';
 
-export default config(
+export default defineConfig(
   // Shared configs
   js.configs.recommended,
   ...tsConfigs.recommended,
@@ -100,6 +101,20 @@ export default config(
     files: ['**/packages/shared/**/*.ts'],
     rules: {
       'no-restricted-imports': 'off',
+    },
+  },
+  // vitest 設定・テストファイルは各パッケージの tsconfig の include 外(かつ build の
+  // emit 対象外)のため、typed-linting(projectService)が解決できない。これらのみ
+  // 型情報を要するルールを無効化する。既に tsconfig に include 済みの他の設定ファイル
+  // (vite.config.mts / tailwind.config.ts 等)は対象にせず、typed-lint を維持する。
+  // 構文・import 順序など型非依存のルールは引き続き適用される。
+  {
+    files: ['**/vitest.config.{ts,mts,cts}', '**/*.{test,spec}.{ts,tsx}'],
+    ...tsConfigs.disableTypeChecked,
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+      },
     },
   },
 );

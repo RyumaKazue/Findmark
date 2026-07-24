@@ -197,12 +197,16 @@ packages/storage/lib/
 
 > ユニットテストは boilerplate 慣習に合わせ、対象と同階層への co-location を基本とする。
 
-> **⚠️ テスト基盤は現状未整備(実装着手時の必須対応)**: 上記のテスト配置は目標構成であり、現状のツールチェーンでは実行手段がない。以下を整備タスクとする:
-> - `packages/shared` / `packages/storage` に vitest を追加し、各 `package.json` に `"test": "vitest run"` を追加する(現状 `test` スクリプトは `chrome-extension` のみ)
-> - `turbo.json` に `test` パイプライン(依存関係付き)を追加する(現状 build/dev/lint/type-check/e2e のみ)
-> - CI(`.github/workflows/`)にテスト実行ステップを追加する
-> - `tests/integration/` を新設する場合、`pnpm-workspace.yaml` の `tests/*` パターンに従い独立パッケージ化するか、`tests/e2e` 配下に統合するかを決める
-> - E2Eの命名は既存の `tests/e2e/specs/page-*.test.ts`(ページ単位)に合わせるか、`[シナリオ].test.ts` を新設するか方針を統一する
+> **✅ ユニットテスト基盤は整備済み(U2 test-infrastructure, 2026-07-24)**: ユニットテストの実行基盤は導入済み。
+> - `packages/shared` / `packages/storage` に vitest(`^4`)+ `@vitest/coverage-v8` を導入し、各 `package.json` に `"test": "vitest run"`・`vitest.config.ts`(co-located `lib/**/*.test.ts`・v8 coverage)を追加済み。`chrome-extension` は vitest 導入済み(実テストは U17 まで `passWithNoTests` で緑)。
+> - `turbo.json` に `test` タスク(`dependsOn: ["^ready"]`)、ルート `package.json` に `"test": "turbo test"` を追加済み。
+> - CI は `.github/workflows/test.yml`(`pull_request` トリガ)で `pnpm test` を実行。
+> - テストファイルは build tsconfig(`tsc -b`)から `exclude` して public dist に混入させない。`vitest.config.ts` / `*.test.ts` は typed-lint(projectService)対象外(`eslint.config.ts` の override)。
+> - coverage の 80% しきい値は、実ロジックが揃う U3 以降で `coverage.thresholds` を有効化し CI gate 化する(現状は目標値をコメントで保持)。
+>
+> **残る整備方針(未確定・該当作業単位で判断)**:
+> - `tests/integration/` を新設する場合、`pnpm-workspace.yaml` の `tests/*` パターンに従い独立パッケージ化するか、`tests/e2e` 配下に統合するかを決める。
+> - E2Eの命名は既存の `tests/e2e/specs/page-*.test.ts`(ページ単位)に合わせるか、`[シナリオ].test.ts` を新設するか方針を統一する。
 
 ### 設定ファイル
 

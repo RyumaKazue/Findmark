@@ -196,7 +196,7 @@ graph TD
 | ID | 作業単位名 | 対応機能 | 状態 | steering ディレクトリ |
 |----|-----------|---------|------|----------------------|
 | U1 | manifest-permissions | 前提(1,10) | ✅ 完了 (2026-07-24) | `.steering/20260724-manifest-permissions/` |
-| U2 | test-infrastructure | 前提(全) | 未着手 | - |
+| U2 | test-infrastructure | 前提(全) | ✅ 完了 (2026-07-24) | `.steering/20260724-test-infrastructure/` |
 | U3 | normalizer-core | 2 | 未着手 | - |
 | U4 | bookmark-service | 前提(1,4,7,9) | 未着手 | - |
 | U5 | alias-store | 3 | 未着手 | - |
