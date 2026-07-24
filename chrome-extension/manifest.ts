@@ -30,7 +30,7 @@ const manifest = {
   },
   version: packageJson.version,
   description: '__MSG_extensionDescription__',
-  permissions: ['storage'],
+  permissions: ['bookmarks', 'storage', 'activeTab', 'favicon'],
   options_page: 'options/index.html',
   background: {
     service_worker: 'background.js',
@@ -43,19 +43,15 @@ const manifest = {
   icons: {
     '128': 'icon-128.png',
   },
-  content_scripts: [
-    {
-      matches: ['http://*/*', 'https://*/*', '<all_urls>'],
-      css: ['content.css'],
+  commands: {
+    _execute_action: {
+      suggested_key: {
+        default: 'Ctrl+Shift+F',
+        mac: 'Command+Shift+F',
+      },
+      description: 'Findmark の検索ポップアップを開く',
     },
-  ],
-  devtools_page: 'devtools/index.html',
-  web_accessible_resources: [
-    {
-      resources: ['*.js', '*.css', '*.svg', 'icon-128.png', 'icon-34.png'],
-      matches: ['*://*/*'],
-    },
-  ],
+  },
 } satisfies ManifestType;
 
 export default manifest;
