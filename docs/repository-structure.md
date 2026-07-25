@@ -133,9 +133,11 @@ packages/shared/lib/
 │   └── htmlFormat.ts          # Netscape Bookmark File 入出力
 ├── undo/
 │   └── UndoManager.ts
-├── types/                     # ドメイン型(AliasRecord, TrashItem, SearchResultItem 等)
+├── types/                     # サービス層固有の型(SearchResultItem, FolderScope 等) + データ型の再エクスポート
 └── index.ts
 ```
+
+> **型の帰属(U4, 2026-07-25 是正)**: データモデル型(`BookmarkNode`/`AliasRecord`/`AliasChunk`/`AliasIndex`/`UserSettings`/`LocalState`)は最下層 `packages/storage/lib/types.ts` に置き、`packages/shared/lib/types/` はそれらを `@extension/storage` から再エクスポートする。`SearchResultItem`/`FolderScope` 等サービス層固有の型のみ shared に実体を置く（循環依存の禁止を参照）。
 
 **命名規則**: クラス/サービスは PascalCase、純粋関数モジュールは camelCase。
 
@@ -184,7 +186,8 @@ packages/storage/lib/
 | ドメインサービス | `packages/shared/lib/**/` | PascalCase.ts | `SearchEngine.ts` |
 | 純粋関数/スキーマ | `packages/shared/lib/**/` | camelCase.ts | `jsonFormat.ts` |
 | ストレージ実装 | `packages/storage/lib/impl/` | camelCase.ts | `aliasStore.ts` |
-| ドメイン型 | `packages/shared/lib/types/` | camelCase.ts | `alias.ts` |
+| データモデル型 | `packages/storage/lib/types.ts` | - | `BookmarkNode` / `AliasRecord`（storage が正・shared が再エクスポート） |
+| サービス層の型 | `packages/shared/lib/types/` | camelCase.ts | `search.ts`（`SearchResultItem` / `FolderScope`） |
 | 背景処理 | `chrome-extension/src/background/` | camelCase.ts | `index.ts` |
 
 ### テストファイル
@@ -254,7 +257,9 @@ packages/storage (データ) → Chrome API
 - `pages/*` から `chrome.*` API の直接呼び出し(❌ 必ず storage 経由)
 
 ### 循環依存の禁止
-共有の型・定数は `packages/shared/lib/types/` または専用モジュールに抽出し、双方向 import を避ける。
+双方向 import を避ける。特に**データモデル型（`BookmarkNode` / `AliasRecord` / `AliasChunk` / `AliasIndex` / `UserSettings` / `LocalState` 等）は最下層の `packages/storage/lib/types.ts` に置く**。`packages/shared` はこれらを `@extension/storage` から再エクスポートし、consumer は従来どおり `@extension/shared` からも取得できる（依存は `shared → storage` の一方向）。
+
+> **経緯（U4, 2026-07-25）**: 当初データモデル型を `packages/shared/lib/types/` に置いたが、`storage` の `BookmarkService` 等がこれらを必要とし、`storage → shared` の型 import を足すと `shared ⇄ storage` の循環依存になり turbo のビルドが破綻した（`import type` でも turbo の task graph 上は循環扱い）。そのため型を storage へ移設し `shared` が再エクスポートする構成に是正した。サービス層固有の型（`SearchResultItem` / `FolderScope` 等）は `packages/shared/lib/types/` に置く。
 
 ---
 

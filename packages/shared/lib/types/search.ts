@@ -1,4 +1,4 @@
-import type { BookmarkNode } from './bookmark.js';
+import type { BookmarkNode } from '@extension/storage';
 
 /**
  * 検索結果の 1 項目。SearchEngine（U6）が返す値型。
