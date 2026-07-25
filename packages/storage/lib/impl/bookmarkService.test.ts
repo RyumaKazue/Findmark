@@ -15,6 +15,7 @@ const createChromeMock = () => ({
   },
   tabs: {
     query: vi.fn(),
+    update: vi.fn(),
   },
   runtime: {
     getURL: vi.fn((path: string) => `chrome-extension://test-ext-id${path}`),
@@ -199,6 +200,14 @@ describe('BookmarkService.getCurrentTab', () => {
   it('アクティブタブが無い場合も空文字にフォールバックする', async () => {
     chromeMock.tabs.query.mockResolvedValue([]);
     expect(await service.getCurrentTab()).toEqual({ url: '', title: '' });
+  });
+});
+
+describe('BookmarkService.openUrl', () => {
+  it('アクティブタブで URL を開く（tabs.update({ url }) を呼ぶ）', async () => {
+    chromeMock.tabs.update.mockResolvedValue({});
+    await service.openUrl('https://ex.com/a');
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith({ url: 'https://ex.com/a' });
   });
 });
 

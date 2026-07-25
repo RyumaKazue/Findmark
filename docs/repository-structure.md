@@ -99,6 +99,26 @@ pages/popup/src/
 - 依存可能: `packages/shared`, `packages/storage`, `packages/ui`, `packages/i18n`
 - 依存禁止: `chrome.bookmarks` / `chrome.storage` の直接呼び出し(必ず `packages/storage` 経由)
 
+**デザイン準拠のコンポーネント分割**: 上記ツリーは概略。ポップアップの視覚仕様は [docs/design/README.md](./design/README.md) を正とし、同「コンポーネント分割（推奨）」に沿って以下へ整理する（実装は作業単位ごとに追加）。
+
+| コンポーネント | 責務 | 作業単位 |
+|---|---|---|
+| `PopupShell` | 760×560 外枠・角丸・影・3領域レイアウト | U7 |
+| `SearchHeader` | 検索ボックス・フォルダチップ・「＋追加」 | U7(骨格) / U11(チップ) / U14(追加) |
+| `BulkActionBar` | 一括操作バー（状態1f） | U13 |
+| `FolderTree` / `FolderTreeItem` | 再帰ツリー・開閉・選択・ドロップ先・深さ省略 | U7(表示) / U11(挙動) |
+| `ResultList` | 仮想スクロール・キーボードナビ・空状態 | U7 |
+| `ResultRow` | 56px 2段組・チップ・チェックボックス・dimmed | U7(基本) / U10・U13(編集・選択) |
+| `RowEditor` | インライン編集フォーム（状態1d） | U10 |
+| `AliasChipInput` / `AliasChip` | 別名チップ入力・pill（状態1e・マッチ表示） | U9 |
+| `Favicon` | 画像＋失敗時の頭文字タイル | U7 |
+| `DragGhost` | ドラッグ中の浮遊カード（状態1g） | U12 |
+| `Breadcrumb` | パス表示（深さに応じた省略） | U11 |
+
+**デザイントークン / フォントの配置**:
+- **トークン**: `docs/design/README.md`「Design Tokens」を正として、Tailwind config の `theme.extend`（色・スペーシング・角丸・影）または CSS 変数へ写す（`packages/ui` の共有設定に置き、popup/options から参照）。
+- **フォント**: `Noto Sans JP`（400/500/700）/ `IBM Plex Mono`（400/500）の **woff2 を同梱**し `@font-face` で定義する（CDN参照禁止＝CSP・オフライン）。資産は拡張にバンドルされる場所（例: `pages/popup/public/fonts/` または `packages/ui` の `global.css` と同梱資産）へ配置する。導入は U7。
+
 ### pages/options/ (オプションページ)
 
 **役割**: ポップアップに置けない機能。インポート/エクスポート(ファイルダイアログ)、ゴミ箱、設定。

@@ -11,6 +11,7 @@
   - [docs/repository-structure.md](./repository-structure.md)
   - [docs/development-guidelines.md](./development-guidelines.md)
   - [docs/glossary.md](./glossary.md)
+  - [docs/design/README.md](./design/README.md)（ポップアップUIデザインハンドオフ・レイアウトの正）
 
 > 本書は上記の永続ドキュメントを引用して構成した派生ロードマップである。
 > 内容が永続ドキュメントと食い違う場合は、永続ドキュメント側を正とする。
@@ -62,6 +63,32 @@ PRD「スコープ外」「将来的な機能(Post-MVP)」に従い、以下は�
 
 ---
 
+## デザイン準拠（レイアウトの正）
+
+ポップアップの**視覚仕様（レイアウト・寸法・デザイントークン・タイポグラフィ・状態）**は [docs/design/README.md](./design/README.md) と `docs/design/Findmark Popup.dc.html`（760×560・hifi・9状態）を**正**とし、UI 作業単位はこれを忠実に再現する。
+
+**優先関係（precedence）**:
+- `docs/design/` = **視覚仕様の正**。
+- 既存の永続ドキュメント（product-requirements / functional-design / architecture）= **データモデル・保存・検索ロジック・プライバシーの正**。
+- README の「State Management / データ取得 / スコア」節（bookmarkId キー保存・スコア100/80…・別名上限8・外部 `favicon.ico`）は既存実装（U4/U5/U6）を**上書きしない**。詳細と非採用項目は [functional-design.md](./functional-design.md)「UI設計 > デザイン非採用項目」を参照。
+- **#2（検索スコア/ランキング）**: 今回は U6 実装（タイトル優先・タイトル昇順・URL非照合）を維持する。デザインの「別名を最上位・空クエリ時は最近順(updatedAt降順)」意図は**将来のロジック改修作業単位で検討**する（本フローの現スコープ外）。
+
+**フォント**: `Noto Sans JP`（400/500/700）/ `IBM Plex Mono`（400/500）を **woff2 で同梱し `@font-face` で適用**する（CDN参照禁止＝CSP・外部通信ゼロ）。**U7** で導入する。
+
+**状態 → 作業単位マッピング**:
+
+| 状態 | 内容 | 作業単位 |
+|---|---|---|
+| 1a | 通常（検索前・3領域シェル） | **U7** |
+| 1b / 2a / 2b | フォルダ絞り込み・多階層ツリー・深階層省略 | **U11** |
+| 1c | 別名ヒット表示（マッチチップ強調） | U7(表示) / U9(編集) |
+| 1d | インライン編集（リネーム/URL/別名展開） | **U10** |
+| 1e | 別名チップ編集 | **U9** |
+| 1f | 複数選択・一括操作バー | **U13** |
+| 1g | ドラッグ&ドロップ | **U12** |
+
+---
+
 ## 作業単位一覧
 
 各作業単位は steering スキル1サイクル（`.steering/[YYYYMMDD]-[作業単位名]/`）に対応する。
@@ -75,11 +102,11 @@ PRD「スコープ外」「将来的な機能(Post-MVP)」に従い、以下は�
 | U4 | bookmark-service | BookmarkService(chrome.bookmarks/tabs ラッパ: getTree/getFolderPath/ensureFolderPath/create/rename/updateUrl/move/remove/getCurrentTab/faviconUrl)、SettingsStore、LocalStateStore | 前提(1,4,7,9) | U1, U2 | フォルダパス解決・自動作成・現在タブ取得が動作 / UIがchrome APIを直接触らない | `packages/storage/lib/impl/bookmarkService.ts` 他 |
 | U5 | alias-store | AliasStore(チャンク分割 `alias_chunk_N` + `alias_index` 逆引き、バイト長ベース分割、sync→local フォールバック、upsert/merge/remove/getAll、20個・50文字・重複排除の検証) | 3 | U3 | 100件境界でチャンク分割 / 上限超過で AliasLimitError / sync容量超過でlocal退避 | `packages/storage/lib/impl/aliasStore.ts` |
 | U6 | search-engine | SearchEngine(正規化AND部分一致、matchedAliases付与、folderScope除外、スコアリング、結果0件時の Levenshtein フォールバック) | 2 | U3, U4, U5 | AND部分一致 / マッチ別名の付与 / scope除外 / 0件時のみフォールバック発火 | `packages/shared/lib/search/SearchEngine.ts` |
-| U7 | popup-search-shell | 検索ポップアップ表示基盤: Popup ルート、SearchBox、ResultList(仮想スクロール)、ResultRow、Favicon(取得失敗→頭文字アバター)、useSearch。起動即フォーカス・インクリメンタル検索・↑↓/Enter/クリックで開く。**ボイラープレートのデモPopupを置換** | 1, 10 | U6 | 起動200ms以内にフォーカス / 1文字ごと絞り込み / Enterで開く / ファビコン↔アバターでレイアウト不動 | `pages/popup/src/` |
+| U7 | popup-search-shell | 検索ポップアップ表示基盤 **兼 デザイン状態1aの3領域シェル**: PopupShell(760×560)、SearchHeader(検索ボックス＋「＋追加」プレースホルダ)、左ペイン FolderTree(ツリー表示＋**フォルダ選択チップによる絞り込み(基本)**)、右ペイン ResultList(仮想スクロール)・ResultRow・Favicon(取得失敗→頭文字アバター)、useSearch。**デザイントークン定義＋フォント同梱(Noto Sans JP/IBM Plex Mono woff2)**。起動即フォーカス・インクリメンタル検索(debounce120ms)・↑↓/Enter/クリックで開く。**ボイラープレートのデモPopupを置換**。※左ペインは件数表示に代えてフォルダ選択チップを置く(ユーザー指示によるデザインmockからの意図的逸脱)。検索ボックスへのフォルダチップ挿入・直下トグル・ツリー⇄チップ同期・展開永続・多階層省略は U11 | 1, 10, 5(基本) | U6 | 状態1aと寸法・トークンが整合 / 起動200ms以内にフォーカス / 1文字ごと絞り込み / Enterで開く / ファビコン↔アバターでレイアウト不動 / フォルダ選択で右ペインが配下(サブ含む)に絞り込まれる | `pages/popup/src/`, フォント資産, トークン設定 |
 | U8 | mode-keyboard | モード状態機械(LIST/INLINE_EDIT/ALIAS_EDIT/DRAG/PANEL)と一貫キー割り当て、Escape の段階的戻り、検索ファースト復帰(useMode) | 6 | U7 | 各モードで↑↓/Enter/Escapeが定義通り / Escapeが1段階ずつ戻る / 文字入力で検索へ復帰 | `pages/popup/src/hooks/useMode.ts` 他 |
 | U9 | alias-editor | 別名チップ編集UI(AliasEditor): 複数別名登録、Enter/`,`/Space確定、Backspace削除、重複時の点滅、上限表示、ALIAS_EDITモード連携 | 3 | U5, U8 | チップ確定/削除/再編集 / 正規化重複を弾く / 上限20個・50文字 / マッチ別名を先頭ハイライト | `pages/popup/src/components/AliasEditor.tsx` |
 | U10 | inline-edit-delete-undo | インライン編集(リネーム/URL編集、同時展開、フォーカスアウト確定・Escape破棄・URL不正で赤枠)、削除、UndoManager + Toast(5秒アンドゥ) | 4 | U4, U8 | インラインでリネーム/URL編集 / URL不正で確定不可+インラインエラー / 削除が5秒アンドゥ付き | `pages/popup/src/components/InlineEdit.tsx`, `Toast.tsx`, `packages/shared/lib/undo/UndoManager.ts` |
-| U11 | folder-scope-tree | 左ペインFolderTree(220px)、フォルダチップによる絞り込み(SearchBox先頭挿入、常に1つ、サブフォルダ含む/直下トグル、チップ↔ツリー双方向同期、folderIDで保持) | 5 | U4, U7 | フォルダクリックでチップ挿入 / `×`でキーワード残し解除 / フォルダパスは照合対象外 / `/`含みでも壊れない | `pages/popup/src/components/FolderTree.tsx` 他 |
+| U11 | folder-scope-tree | 左ペインFolderTree(220px)のフォルダチップによる絞り込みを**フル化**（SearchBox先頭へのフォルダチップ挿入、常に1つ、サブフォルダ含む/直下トグル、チップ↔ツリー双方向同期、folderIDで保持、展開永続、多階層省略）。※基本のフォルダ選択→配下(サブ含む)絞り込みは U7 で実装済み。本単位はその上に検索ボックスチップ・直下トグル・双方向同期・永続・省略を積む | 5 | U4, U7 | フォルダクリックでチップ挿入 / `×`でキーワード残し解除 / フォルダパスは照合対象外 / `/`含みでも壊れない / 直下のみトグルが効く | `pages/popup/src/components/FolderTree.tsx` 他 |
 | U12 | folder-move-dnd | フォルダ移動: Ctrl+M の MovePanel(絞り込み→Enter、キーボード代替必須)、D&D(5px開始・ゴースト・スプリングロード600ms・オートスクロール・Escape中止)、move即時実行+アンドゥ | 7 | U4, U8, U10, U11 | キーボードとD&Dの両方で移動 / 現在の親は無効化 / 移動しても結果から消えずパス更新 / 5秒アンドゥ | `pages/popup/src/components/MovePanel.tsx`, `hooks/useDragAndDrop.ts` |
 | U13 | multi-select-bulk | 複数選択(Ctrl/Cmd+クリック個別・Shift範囲・Ctrl/Cmd+A全件)、チェックボックス段階表示、一括操作バー、一括移動/削除を1アンドゥ単位で扱う | 8 | U7, U10, U12 | 3種の選択操作 / 選択中は一括操作バー表示 / 一括アンドゥが1回で全戻し | `pages/popup/src/hooks/useSelection.ts` 他 |
 | U14 | add-current-page | 現在ページ登録: ヘッダー「+追加」で即時登録し編集パネルへ、タイトル/保存先(絞り込みDD・初期値=前回)/別名編集、各フィールド即時保存、パネル閉でも登録維持 | 9 | U4, U9, U11 | 即時登録→編集パネル / 登録済みは「★登録済み」 / 保存先初期値が前回フォルダ / 閉じても登録が残る | `pages/popup/src/components/AddCurrentPanel.tsx` |
@@ -201,7 +228,7 @@ graph TD
 | U4 | bookmark-service | 前提(1,4,7,9) | ✅ 完了 (2026-07-25) | `.steering/20260725-bookmark-service/` |
 | U5 | alias-store | 3 | ✅ 完了 (2026-07-25) | `.steering/20260725-alias-store/` |
 | U6 | search-engine | 2 | ✅ 完了 (2026-07-25) | `.steering/20260725-search-engine/` |
-| U7 | popup-search-shell | 1, 10 | 未着手 | - |
+| U7 | popup-search-shell | 1, 10, 5(基本) | ✅ 完了 (2026-07-25) | `.steering/20260725-popup-search-shell/` |
 | U8 | mode-keyboard | 6 | 未着手 | - |
 | U9 | alias-editor | 3 | 未着手 | - |
 | U10 | inline-edit-delete-undo | 4 | 未着手 | - |
