@@ -24,10 +24,10 @@
     "postinstall": "pnpm ready"
   },
   "dependencies": {
+    "@extension/storage": "workspace:*",
     "react-error-boundary": "^6.0.0"
   },
   "devDependencies": {
-    "@extension/storage": "workspace:*",
     "@extension/tsconfig": "workspace:*",
     "@vitest/coverage-v8": "^4.1.10",
     "type-fest": "^4.41.0",
