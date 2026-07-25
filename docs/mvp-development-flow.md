@@ -198,7 +198,7 @@ graph TD
 | U1 | manifest-permissions | 前提(1,10) | ✅ 完了 (2026-07-24) | `.steering/20260724-manifest-permissions/` |
 | U2 | test-infrastructure | 前提(全) | ✅ 完了 (2026-07-24) | `.steering/20260724-test-infrastructure/` |
 | U3 | normalizer-core | 2 | ✅ 完了 (2026-07-25) | `.steering/20260724-normalizer-core/` |
-| U4 | bookmark-service | 前提(1,4,7,9) | 未着手 | - |
+| U4 | bookmark-service | 前提(1,4,7,9) | ✅ 完了 (2026-07-25) | `.steering/20260725-bookmark-service/` |
 | U5 | alias-store | 3 | 未着手 | - |
 | U6 | search-engine | 2 | 未着手 | - |
 | U7 | popup-search-shell | 1, 10 | 未着手 | - |
