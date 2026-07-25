@@ -130,6 +130,14 @@ export class BookmarkService {
   }
 
   /**
+   * アクティブタブで URL を開く（UC-1「現在タブで URL を開く」）。
+   * UI から `chrome.tabs` を直接呼ばせないため、tabs ラッパである本サービスに集約する。
+   */
+  async openUrl(url: string): Promise<void> {
+    await this.tabs.update({ url });
+  }
+
+  /**
    * ファビコン取得用の URL を組み立てて返す（同期）。
    * `chrome-extension://<runtime.id>/_favicon/?pageUrl=...&size=...` を生成し、
    * `chrome.runtime.id` へのアクセスをデータ層に閉じ込める。UI はこの文字列を `<img src>` に渡すだけ。

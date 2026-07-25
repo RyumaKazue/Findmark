@@ -3,7 +3,7 @@
 - **ドキュメント名**: architecture
 - **プロダクト名**: Findmark
 - **作成日**: 2026-07-24
-- **参照元**: [docs/product-requirements.md](./product-requirements.md), [docs/functional-design.md](./functional-design.md)
+- **参照元**: [docs/product-requirements.md](./product-requirements.md), [docs/functional-design.md](./functional-design.md), [docs/design/README.md](./design/README.md)（ポップアップUIデザイン・レイアウトの正）
 
 本書は、PRDの要件と機能設計を技術的に実現するためのシステム構造・技術選定・非機能設計を定義する。ベースはChrome拡張ボイラープレート(chrome-extension-boilerplate-react-vite)で、pnpm workspace + Turborepo のモノレポ構成。**外部通信ゼロ / host permission不要** を全設計の不変条件とする。
 
@@ -160,6 +160,8 @@ Chrome拡張は複数の実行コンテキスト(Popup / Options / Service Worke
 - **外部送信ゼロ**: fetch/XHR/WebSocket を一切使用しない。テレメトリも持たない。「データ収集なし」を技術的に保証。
 - **最小権限**: `permissions` は `bookmarks` / `storage` / `activeTab` / `favicon` の4つのみ。`host_permissions` は要求しない。`favicon` 権限の警告表示有無は申請前に現行ドキュメントで確認する。
 - **CSP**: MV3デフォルトの厳格なCSPを維持し、外部スクリプト・リソースを読み込まない。
+- **フォント同梱**: デザイン指定フォント `Noto Sans JP`（400/500/700）/ `IBM Plex Mono`（400/500）は **woff2 を拡張にバンドルし `@font-face` で適用**する。Google Fonts 等の **CDN 参照は禁止**（CSP・外部通信ゼロ・オフライン動作のため）。レイアウト・トークン・寸法は `docs/design/` を正とする（[functional-design.md](./functional-design.md)「UI設計」）。
+- **ファビコン**: `chrome-extension://<runtime.id>/_favicon/?pageUrl=...`（`favicon` 権限）のみを使用し、外部 `https://<host>/favicon.ico` の取得は行わない（外部通信ゼロ）。取得失敗時は頭文字アバターにフォールバックする（`docs/design/` 準拠）。
 - **機密情報**: 認証情報・APIキーを持たない(外部サービス連携がないため)。
 
 ### 入力検証
@@ -212,6 +214,7 @@ Chrome拡張は複数の実行コンテキスト(Popup / Options / Service Worke
 
 ### 環境要件
 - **ブラウザ**: Chrome(Manifest V3対応版)。Firefox は browser_specific_settings で対応余地を残すが、`favicon` 権限・sidePanel差異に注意(MVPはChrome優先)。
+- **ポップアップ寸法**: 760×560px 固定（Chrome popup 上限 800×600 に収まる）。レイアウト・トークンは `docs/design/` を正とする。
 - **開発環境**: Node.js 22.15.1、pnpm 10.11.0。
 - **外部依存**: なし(外部API・サーバー不要)。
 

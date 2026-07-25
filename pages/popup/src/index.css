@@ -1,6 +1,22 @@
 @import '@extension/ui/global.css';
 
+/* ポップアップは 760×560 固定（docs/design）。html,body の margin:0 は global.css で担保。 */
+html,
 body {
-  width: 300px;
-  height: 260px;
+  width: 760px;
+  height: 560px;
+  overflow: hidden;
+}
+
+body {
+  /* 本文は Noto Sans JP、英数字ID・ローマ字別名は各要素で font-mono（IBM Plex Mono）を指定する。 */
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  color: #1f2430;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app-container {
+  width: 760px;
+  height: 560px;
 }
