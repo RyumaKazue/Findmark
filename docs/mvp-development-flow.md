@@ -200,7 +200,7 @@ graph TD
 | U3 | normalizer-core | 2 | ✅ 完了 (2026-07-25) | `.steering/20260724-normalizer-core/` |
 | U4 | bookmark-service | 前提(1,4,7,9) | ✅ 完了 (2026-07-25) | `.steering/20260725-bookmark-service/` |
 | U5 | alias-store | 3 | ✅ 完了 (2026-07-25) | `.steering/20260725-alias-store/` |
-| U6 | search-engine | 2 | 未着手 | - |
+| U6 | search-engine | 2 | ✅ 完了 (2026-07-25) | `.steering/20260725-search-engine/` |
 | U7 | popup-search-shell | 1, 10 | 未着手 | - |
 | U8 | mode-keyboard | 6 | 未着手 | - |
 | U9 | alias-editor | 3 | 未着手 | - |
