@@ -12,8 +12,9 @@ interface FolderTreeProps {
 }
 
 /**
- * 左ペイン（220px）のフォルダツリー。ツリー表示・開閉のローカル切替に加え、フォルダ選択チップで
- * 選択したフォルダ配下（サブフォルダ含む）へ右ペインを絞り込む（U7）。
+ * 左ペイン（220px）のフォルダツリー。ツリー表示・開閉のローカル切替に加え、フォルダ選択（📎クリップ）で
+ * 選択したフォルダ配下（サブフォルダ含む）へ右ペインを絞り込む（U7）。深い階層で名前が見切れる場合は
+ * 横スクロール（スライド）で全表示でき、📎ボタンは右端に固定する。
  * 検索ボックスへのフォルダチップ挿入・直下トグル・ツリー⇄チップ同期・展開永続・多階層省略は U11。
  */
 export const FolderTree = ({ selectedFolderId, onSelectFolder }: FolderTreeProps) => {
@@ -51,22 +52,26 @@ export const FolderTree = ({ selectedFolderId, onSelectFolder }: FolderTreeProps
     });
 
   return (
-    <div className="flex h-full flex-col gap-[1px] overflow-auto px-2 py-3">
-      <div className="text-ink flex h-8 items-center justify-between gap-[6px] rounded-md px-[10px] text-[12.5px] font-bold">
-        すべて
-        <FolderSelectChip selected={selectedFolderId === null} onClick={() => onSelectFolder(null)} />
+    // 縦横スクロール。深い階層/長い名前はスライド（横スクロール）で全表示する。
+    <div className="h-full overflow-auto">
+      {/* 内容は最小でペイン幅、名前が長ければ max-content まで広げて横スクロールさせる。 */}
+      <div className="flex w-max min-w-full flex-col gap-[1px] px-2 py-3">
+        <div className="text-ink flex h-9 items-center gap-[6px] rounded-md px-[10px] text-[14px] font-bold">
+          <span className="whitespace-nowrap">すべて</span>
+          <FolderSelectChip selected={selectedFolderId === null} onClick={() => onSelectFolder(null)} />
+        </div>
+        {folders.map(folder => (
+          <FolderTreeItem
+            key={folder.id}
+            folder={folder}
+            depth={0}
+            expandedIds={expandedIds}
+            onToggle={toggle}
+            selectedFolderId={selectedFolderId}
+            onSelectFolder={onSelectFolder}
+          />
+        ))}
       </div>
-      {folders.map(folder => (
-        <FolderTreeItem
-          key={folder.id}
-          folder={folder}
-          depth={0}
-          expandedIds={expandedIds}
-          onToggle={toggle}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={onSelectFolder}
-        />
-      ))}
     </div>
   );
 };
