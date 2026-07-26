@@ -20,9 +20,9 @@ interface FolderTreeItemProps {
 }
 
 /**
- * フォルダ選択チップ（フォルダ名の右・件数表示の位置に置換）。押下でそのフォルダを選択し、
- * 右ペインに中身（配下ブックマーク）を表示する。コンパクトなラジオ風トグル（18px）で、
- * 選択中は accent 塗り＋チェック、未選択はホバーで薄く表示する（深い階層でも名前幅を圧迫しない）。
+ * フォルダ選択ボタン（📎クリップ・件数表示の位置に置換）。押下でそのフォルダを選択し、
+ * 右ペインに中身（配下ブックマーク）を表示する。選択状態はチェックのように強調せず、押すためのボタンに徹する。
+ * 横スクロール時も常に見えるよう `sticky right-0` で右端に固定し、背景でスクロール中の名前を隠す。
  * 検索ボックスへのフォルダチップ挿入・直下トグル・ツリー⇄チップ同期は U11。
  */
 export const FolderSelectChip = ({ selected, onClick }: FolderSelectChipProps) => (
@@ -33,12 +33,10 @@ export const FolderSelectChip = ({ selected, onClick }: FolderSelectChipProps) =
     title={selected ? 'このフォルダを表示中（クリックで解除）' : 'このフォルダの中身を表示'}
     onClick={onClick}
     className={cn(
-      'flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full text-[10px] leading-none',
-      selected
-        ? 'bg-accent text-white'
-        : 'border-line-input hover:border-accent hover:text-accent border text-transparent',
+      'sticky right-0 ml-auto flex-none cursor-pointer rounded-md px-1.5 py-0.5 text-[15px] leading-none',
+      selected ? 'bg-accent-bg' : 'bg-pane hover:bg-accent-bg',
     )}>
-    ✓
+    📎
   </button>
 );
 
@@ -62,20 +60,23 @@ export const FolderTreeItem = ({
   // 深い階層ほどインデントを詰め、最下層のフォルダ名幅を確保する（docs/design 2b「深階層はインデントを詰める」に準拠）。
   const childIndent = depth === 0 ? 'ml-[12px]' : depth <= 2 ? 'ml-[10px]' : 'ml-[6px]';
 
+  // 配下フォルダを持つ行は開閉三角を濃く表示し「押せる」ことを示す（子なしは三角なし）。
   const triangle = (
     <span
-      className={cn('w-[10px] flex-none text-[9px]', expanded ? 'text-ink-faint' : 'text-triangle')}
+      className={cn('w-[12px] flex-none text-[11px]', expanded ? 'text-ink-faint' : 'text-ink-soft')}
       aria-hidden="true">
       {hasChildren ? (expanded ? '▾' : '▸') : ''}
     </span>
   );
+  // 配下があり展開中は開いたフォルダ（📂）、それ以外は閉じたフォルダ（📁）。開閉状態を直感的に示す。
   const icon = (
-    <span className="flex-none text-[13px]" aria-hidden="true">
-      📁
+    <span className="flex-none text-[16px]" aria-hidden="true">
+      {hasChildren && expanded ? '📂' : '📁'}
     </span>
   );
+  // 名前は省略せず表示し、見切れる場合は左ペインの横スクロール（スライド）で全表示する。
   const name = (
-    <span className="min-w-0 flex-1 truncate text-[12.5px]" title={folder.title}>
+    <span className="whitespace-nowrap text-[14px]" title={folder.title}>
       {folder.title}
     </span>
   );
@@ -84,7 +85,7 @@ export const FolderTreeItem = ({
     <div className="flex flex-col gap-[1px]">
       <div
         className={cn(
-          'flex h-[30px] items-center gap-[6px] rounded-md',
+          'flex h-[34px] items-center gap-[6px] rounded-md',
           depth === 0 ? 'text-ink px-[10px] font-medium' : 'text-ink-2 px-2',
         )}>
         {hasChildren ? (
@@ -92,13 +93,14 @@ export const FolderTreeItem = ({
             type="button"
             aria-label={expanded ? '折りたたむ' : '展開'}
             onClick={() => onToggle(folder.id)}
-            className="flex min-w-0 flex-1 items-center gap-[6px] text-left">
+            className="hover:bg-accent-bg flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-md px-1 py-0.5 text-left">
             {triangle}
             {icon}
             {name}
           </button>
         ) : (
-          <span className="flex min-w-0 flex-1 items-center gap-[6px]">
+          // 子のないフォルダは開閉不可。押下対象にせず（三角なし・ホバーなし）、選択は 📎 のみ。
+          <span className="text-ink-faint flex items-center gap-[6px] whitespace-nowrap px-1 py-0.5">
             {triangle}
             {icon}
             {name}

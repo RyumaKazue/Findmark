@@ -47,8 +47,9 @@ PopupShell (760×560, radius12, shadow, overflow hidden, column)
 **要点**:
 - 配下件数は純粋関数 `buildFolderTree(nodes)` / `countDescendants`（テスト可能）で算出（`FolderTreeNode.count`）。**件数の数値表示は撤去し、その位置に選択チップを置く**（ユーザー指示によるデザインmockからの逸脱）。
 - **開閉**は「三角＋📁＋フォルダ名」全体の押下（`onToggle`）。ローカル state（非永続）。展開永続・多階層省略は U11。
-- **フォルダ選択**（`FolderSelectChip`）: 押下で `onSelectFolder(id)`。コンパクトなラジオ風トグル（18px・選択中は accent＋チェック）で深い階層でも名前幅を圧迫しない。`Popup` の `selectedFolderId` を更新し `useSearch(query, folderId)` 経由で右ペインを配下（サブ含む）に絞り込む。再押下/「すべて」で解除（null）。検索ボックスへのチップ挿入・直下トグル・双方向同期は U11。
-- **深い階層**: フォルダ名は `truncate`＋`title`（全文ツールチップ）、子コンテナのインデントを深いほど詰める（`ml` 12→10→6 / `pl` 8）。子リスト省略「さらにN件」・パス圧縮・「階層をたたむ」バー（状態2b）は U11。
+- **フォルダ選択**（`FolderSelectChip`）: 押下で `onSelectFolder(id)`。**📎クリップのアイコンボタン**で、選択状態は強調せず「押すためのボタン」に徹する（`sticky right-0` で横スクロール時も右端固定・背景でスクロール中の名前を隠す）。`Popup` の `selectedFolderId` を更新し `useSearch(query, folderId)` 経由で右ペインを配下（サブ含む）に絞り込む。再押下/「すべて」で解除（null）。検索ボックスへのチップ挿入・直下トグル・双方向同期は U11。
+- **押下可能フォルダの区別**: 配下ありの親は開閉三角（濃色）＋開閉フォルダ画像（`hasChildren && expanded ? '📂' : '📁'`）＋`hover:bg-accent-bg`＋`cursor-pointer`で押下可能を明示、子なしは `text-ink-faint`・三角なしで区別。フォルダ📁/名前はやや大きめ（名前14px/📁16px/行高34px）。
+- **深い階層/見切れ**: フォルダ名は省略せず（`whitespace-nowrap`）、左ペインを縦横スクロール（`overflow-auto` + 内容 `w-max min-w-full`）にして**横スライドで全表示**＋`title`（全文ツールチップ）。子リスト省略「さらにN件」・パス圧縮・「階層をたたむ」バー（状態2b）は U11。
 
 ### 6. `components/ResultList.tsx`（新規・仮想スクロール）
 **責務**: 結果配列を固定行高56pxで表示、可視範囲のみ描画。
