@@ -293,3 +293,44 @@ describe('SearchEngine — 索引(buildIndex/loadIndex)', () => {
     expect(invalidResult?.aliases).toEqual([]);
   });
 });
+
+describe('SearchEngine — updateAliases(別名編集の索引即時反映)', () => {
+  it('別名を差し替えると、旧別名で不一致・新別名で一致になる', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // 反映前: 旧別名 'ぎっと' で GitHub がヒット。
+    expect(engine.search({ keywords: ['ぎっと'] }).map(r => r.node.id)).toEqual(['10']);
+
+    engine.updateAliases('https://github.com', ['ハブ']);
+
+    // 旧別名では一致しなくなる（フォールバックも含めて 0 件）。
+    expect(engine.search({ keywords: ['ぎっと'] })).toEqual([]);
+    // 新別名で一致し、matchedAliases/aliases も更新される。
+    const results = engine.search({ keywords: ['ハブ'] });
+    expect(results.map(r => r.node.id)).toEqual(['10']);
+    expect(results[0].matchedAliases).toEqual(['ハブ']);
+    expect(results[0].aliases).toEqual(['ハブ']);
+  });
+
+  it('別名を空配列にすると別名照合から外れる', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.updateAliases('https://github.com', []);
+    // 'ぎっと' は別名にのみ存在した語（タイトル/フォルダには無い）。削除で照合対象から外れる。
+    expect(engine.search({ keywords: ['ぎっと'] })).toEqual([]);
+    const browse = engine.search({ keywords: [] });
+    expect(browse.find(r => r.node.id === '10')?.aliases).toEqual([]);
+  });
+
+  it('生 URL が違っても正規化ハッシュが同一なら対象になる', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // 末尾スラッシュ等の差異は normalizeUrl/hashUrl で吸収され、同一エントリに反映される。
+    engine.updateAliases('https://github.com/', ['ぎっとはぶ']);
+    expect(engine.search({ keywords: ['ぎっとはぶ'] }).map(r => r.node.id)).toEqual(['10']);
+  });
+
+  it('不正な URL を渡しても索引を壊さず何も変更しない', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.updateAliases('not-a-valid-url', ['x']);
+    // 既存の別名紐付けは維持される。
+    expect(engine.search({ keywords: ['ぎっと'] }).map(r => r.node.id)).toEqual(['10']);
+  });
+});

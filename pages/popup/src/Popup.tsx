@@ -5,10 +5,10 @@ import { FolderTree } from '@src/components/FolderTree';
 import { PopupShell } from '@src/components/PopupShell';
 import { ResultList } from '@src/components/ResultList';
 import { SearchHeader } from '@src/components/SearchHeader';
-import { isPrintableKey, isSearchFirstExempt, resolveListEscape } from '@src/hooks/modeMachine';
+import { isPrintableKey, isSearchFirstExempt, resolveListEscape, resolveShortcutIntent } from '@src/hooks/modeMachine';
 import { useMode } from '@src/hooks/useMode';
 import { useSearch } from '@src/hooks/useSearch';
-import { bookmarkService } from '@src/services';
+import { aliasStore, bookmarkService } from '@src/services';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -24,9 +24,13 @@ const Popup = () => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   // 左ペインで選択中のフォルダ（null = すべて）。配下（サブフォルダ含む）に絞り込む。
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const { results, isIndexReady } = useSearch(query, selectedFolderId);
+  const { results, isIndexReady, updateAliases } = useSearch(query, selectedFolderId);
   const mode = useMode();
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 別名編集（ALIAS_EDIT）の対象行。mode.targetId（node.id）から現在の結果を引く。
+  const editingAliasId = mode.mode === 'ALIAS_EDIT' ? mode.targetId : null;
+  const editingItem = editingAliasId ? (results.find(r => r.node.id === editingAliasId) ?? null) : null;
 
   // クエリ or フォルダ選択が変わったら選択行を先頭へ戻す（docs/design: 絞り込み変更で focusedIndex=0）。
   useEffect(() => {
@@ -51,6 +55,50 @@ const Popup = () => {
     },
     [results],
   );
+
+  const { enterAliasEdit, exitToList } = mode;
+
+  // 別名編集に入る（選択行を対象にする）。対象行を選択インデックスへ合わせ、仮想スクロールで可視化する。
+  // 既に別の行を別名編集中でも切り替えられるよう、一旦 LIST へ戻してから入り直す
+  // （ENTER_ALIAS_EDIT は LIST からのみ有効。別行の別名/「＋別名」クリックで現在の入力が閉じて対象が移る）。
+  const enterAliasEditAt = useCallback(
+    (index: number) => {
+      const id = results[index]?.node.id;
+      if (!id) {
+        return;
+      }
+      setSelectedIndex(index);
+      exitToList();
+      enterAliasEdit(id);
+    },
+    [results, exitToList, enterAliasEdit],
+  );
+
+  // 別名編集を終了し LIST に戻る。検索ファーストのため検索ボックスへフォーカスを戻す。
+  const closeAliasEdit = useCallback(() => {
+    exitToList();
+    searchInputRef.current?.focus();
+  }, [exitToList]);
+
+  // 別名の永続化（AliasStore.upsert）＋検索索引への即時反映。編集対象の URL は mode.targetId から解決する。
+  const commitAliases = useCallback(
+    async (aliases: string[]) => {
+      const url = editingItem?.node.url;
+      if (!url) {
+        return;
+      }
+      await aliasStore.upsert(url, aliases);
+      updateAliases(url, aliases);
+    },
+    [editingItem, updateAliases],
+  );
+
+  // 編集対象が結果から消えた場合（検索条件変更等）は穏当に LIST へ戻す。
+  useEffect(() => {
+    if (mode.mode === 'ALIAS_EDIT' && editingItem === null) {
+      exitToList();
+    }
+  }, [mode.mode, editingItem, exitToList]);
 
   // LIST の Escape を1段階ずつ解決する（キーワードクリア → フォルダ絞り込み解除 → 閉じる）。
   const handleListEscape = useCallback(() => {
@@ -77,6 +125,13 @@ const Popup = () => {
       const inInput = input !== null && e.target === input;
 
       if (currentMode === 'LIST') {
+        // モード入口ショートカット（U8）。本単位では別名編集（Ctrl/Cmd+;）のみ結線する
+        //（inline-edit=U10 / panel=U12 は該当単位で結線）。
+        if (resolveShortcutIntent(e) === 'alias-edit' && results.length > 0) {
+          e.preventDefault();
+          enterAliasEditAt(selectedIndex);
+          return;
+        }
         const intent = resolveKey(e);
         switch (intent) {
           case 'list:move-down':
@@ -125,7 +180,7 @@ const Popup = () => {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [currentMode, resolveKey, lastIndex, selectedIndex, openAt, handleListEscape]);
+  }, [currentMode, resolveKey, lastIndex, selectedIndex, openAt, handleListEscape, enterAliasEditAt, results.length]);
 
   return (
     <PopupShell
@@ -136,8 +191,12 @@ const Popup = () => {
           results={results}
           selectedIndex={selectedIndex}
           emptyLabel={isIndexReady ? '一致するブックマークがありません' : '読み込み中…'}
+          editingAliasId={editingAliasId}
           onOpen={openAt}
           onHover={setSelectedIndex}
+          onEnterAliasEdit={enterAliasEditAt}
+          onCommitAliases={commitAliases}
+          onCloseAliasEdit={closeAliasEdit}
         />
       }
     />

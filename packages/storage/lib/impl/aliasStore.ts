@@ -11,6 +11,10 @@ const aliasChunkKey = (chunkNo: number): string => `alias_chunk_${chunkNo}`;
  */
 const CHUNK_BYTE_LIMIT = 7 * 1024;
 
+/**
+ * 別名の上限（個数・1個あたりの文字数）。データレイヤーを単一の source of truth とし、
+ * UI（U9 AliasEditor）はここから import して二重定義（ドリフト）を避ける（export はファイル末尾）。
+ */
 const MAX_ALIASES = 20;
 const MAX_ALIAS_LENGTH = 50;
 
@@ -291,3 +295,5 @@ export class AliasStore {
     return localIndex;
   }
 }
+
+export { MAX_ALIASES, MAX_ALIAS_LENGTH };

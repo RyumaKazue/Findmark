@@ -1,5 +1,5 @@
 import { aliasStore, bookmarkService, searchEngine } from '../services.js';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SearchResultItem } from '@extension/shared';
 
 /** インクリメンタル検索の debounce（docs/design「debounce 120ms 目安」）。 */
@@ -10,6 +10,11 @@ export interface UseSearchResult {
   results: SearchResultItem[];
   /** 索引構築が完了したか。「読み込み中の空」と「本当に0件」を UI が区別するために使う。 */
   isIndexReady: boolean;
+  /**
+   * 別名編集（U9）の結果を検索索引へ即時反映し、再検索を促す。
+   * `SearchEngine.updateAliases`（メモリ内更新）を実行し、索引バージョンを進めて `results` を再計算させる。
+   */
+  updateAliases: (url: string, aliases: string[]) => void;
 }
 
 /**
@@ -23,6 +28,7 @@ export interface UseSearchResult {
 export const useSearch = (query: string, folderId: string | null): UseSearchResult => {
   const [isIndexReady, setIsIndexReady] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const [results, setResults] = useState<SearchResultItem[]>([]);
 
   // 起動時1回: 索引構築。失敗は握り潰さずログのみ残し、UI は空結果として継続する
   // （索引未構築でも検索ボックスのフォーカス・入力を阻害しない）。
@@ -49,7 +55,8 @@ export const useSearch = (query: string, folderId: string | null): UseSearchResu
     return () => clearTimeout(id);
   }, [query]);
 
-  const results = useMemo(() => {
+  // 現在の索引・クエリ・フォルダ絞り込みで同期検索を実行する（索引更新後の再検索にも共用する）。
+  const runSearch = useCallback((): SearchResultItem[] => {
     if (!isIndexReady) {
       return [];
     }
@@ -58,5 +65,20 @@ export const useSearch = (query: string, folderId: string | null): UseSearchResu
     return searchEngine.search({ keywords, folderScope });
   }, [debouncedQuery, isIndexReady, folderId]);
 
-  return { results, isIndexReady };
+  // クエリ/フォルダ/索引準備の変化で再検索する。
+  useEffect(() => {
+    setResults(runSearch());
+  }, [runSearch]);
+
+  // 別名編集の結果を索引へ反映（メモリ内更新）し、即座に再検索して表示を最新化する。
+  // 永続化（AliasStore.upsert）は呼び出し側が行う。
+  const updateAliases = useCallback(
+    (url: string, aliases: string[]) => {
+      searchEngine.updateAliases(url, aliases);
+      setResults(runSearch());
+    },
+    [runSearch],
+  );
+
+  return { results, isIndexReady, updateAliases };
 };
