@@ -1,38 +1,24 @@
-import { useEffect, useRef } from 'react';
-import type { KeyboardEvent } from 'react';
+import { useEffect } from 'react';
+import type { RefObject } from 'react';
 
 interface SearchHeaderProps {
   query: string;
   onQueryChange: (q: string) => void;
-  onArrowUp: () => void;
-  onArrowDown: () => void;
-  onEnter: () => void;
+  /** 検索入力への参照。起動時フォーカスと検索ファースト復帰のため親が保持する。 */
+  inputRef: RefObject<HTMLInputElement | null>;
 }
 
 /**
  * 固定ヘッダー（56px）。検索ボックス（h34・虫眼鏡・フォーカスリング）と「＋追加」ボタン。
  * 「＋追加」は U7 ではプレースホルダ（現在ページ登録は U14）。フォルダチップ（U11）は未実装。
+ * キー割り当て（↑↓/Enter/Escape）は U8 のモード状態機械（Popup の document リスナー）に集約したため、
+ * 本コンポーネントは自前のキー意味論を持たない。
  */
-export const SearchHeader = ({ query, onQueryChange, onArrowUp, onArrowDown, onEnter }: SearchHeaderProps) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-
+export const SearchHeader = ({ query, onQueryChange, inputRef }: SearchHeaderProps) => {
   // 起動直後に検索ボックスへフォーカスする（200ms 要件。データ読み込みとは独立して即時）。
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      onArrowDown();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      onArrowUp();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      onEnter();
-    }
-  };
+  }, [inputRef]);
 
   return (
     <header className="border-line flex h-14 flex-none items-center gap-3 border-b px-[14px]">
@@ -47,7 +33,6 @@ export const SearchHeader = ({ query, onQueryChange, onArrowUp, onArrowDown, onE
           type="text"
           value={query}
           onChange={e => onQueryChange(e.target.value)}
-          onKeyDown={handleKeyDown}
           placeholder="ブックマークを検索..."
           aria-label="ブックマークを検索"
           className="text-ink placeholder:text-ink-faint h-full flex-1 bg-transparent text-[13px] outline-none"
