@@ -7,7 +7,9 @@ Spotlight / Alfred 型の検索ファーストUIで、上部ヘッダー（検�
 
 対象は **React への実装**。状態管理まで含めた仕様を本ドキュメントに記載する。
 
-> **実装上の優先関係（本リポジトリ）**: 本ハンドオフは **ポップアップの視覚仕様（レイアウト・寸法・デザイントークン・タイポグラフィ・状態）の正**である。一方、**データモデル・別名の保存形式・検索スコア/ランキング・プライバシー方針**は、リポジトリの永続ドキュメント（`docs/architecture.md` / `docs/functional-design.md` / `docs/product-requirements.md`）と実装（`packages/storage` の AliasStore・`packages/shared` の SearchEngine）を正とする。本書の「State Management / データ取得 / スコア」節は汎用サジェストであり、以下は**採用しない**: 別名の `bookmarkId` キー保存（→ URL正規化ハッシュ）・スコア100/80…や別名を最上位（→ 実装済み SearchEngine）・別名上限8（→ 20）・外部 `https://<host>/favicon.ico`（→ `_favicon` 権限のみ・外部通信ゼロ）。詳細は `docs/functional-design.md`「UI設計 > デザイン非採用項目」。
+> **実装上の優先関係（本リポジトリ）**: 本ハンドオフは **ポップアップの視覚仕様（レイアウト・寸法・デザイントークン・タイポグラフィ・状態）の正**である。一方、**データモデル・別名の保存形式・検索スコア/ランキング・プライバシー方針**は、リポジトリの永続ドキュメント（`docs/architecture.md` / `docs/functional-design.md` / `docs/product-requirements.md`）と実装（`packages/storage` の AliasStore・`packages/shared` の SearchEngine）を正とする。本書の「State Management / データ取得 / スコア」節は汎用サジェストであり、以下は**採用しない**: 別名の `bookmarkId` キー保存（→ URL正規化ハッシュ）・スコア100/80…や別名を最上位（→ 実装済み SearchEngine）・別名上限8（→ 20）・外部 `https://<host>/favicon.ico`（→ `_favicon` 権限のみ・外部通信ゼロ）・フォルダ選択で「サブフォルダ配下も対象」（→ 直下のみ）・`→`展開/`←`折りたたみ（→ `←→` はペイン移動、展開は `Enter`）・素キー `E`/`A`（→ 修飾キー方式）・`folderFilter`（→ スコープ＋フォーカス位置の2軸）。詳細は `docs/functional-design.md`「UI設計 > デザイン非採用項目」。
+
+> **キーボード操作の正**: 本書のキー割り当ては `docs/product-requirements.md`「キーボードショートカット一覧」および `docs/functional-design.md`「画面遷移図（Popupのモード状態遷移）」を**正**とする。本書は視覚仕様の正であり、キー割り当てについては上記に追従する（経緯は `docs/ideas/keyboard-first-navigation.md`）。
 
 ## About the Design Files
 同梱の `Findmark Popup.dc.html` は **HTMLで作られたデザインリファレンス（プロトタイプ）**であり、そのまま本番コードとして流用する前提のものではない。
@@ -42,10 +44,10 @@ Chrome拡張の popup は最大 800×600 なので 760×560 は収まる。`html
 同一レイアウトの **状態バリエーション 9種**。HTML内のID（`1a`〜`1g`, `2a`, `2b`）で参照できる。
 
 ### 1a — 通常状態（検索前）
-- **Purpose**: ポップアップを開いた直後。最近のブックマークを閲覧。
+- **Purpose**: ポップアップを開いた直後。全ブックマークを閲覧。
 - **ヘッダー**: 検索ボックス（`flex: 1`, height 34, radius 6, bg `#F7F8FA`, border `1px solid #E4E7EC`, padding `0 12px`, gap 9）。左に虫眼鏡（14×14, stroke `#9AA1AE`, 幅1.6）、プレースホルダー「ブックマークを検索...」 13px / `#9AA1AE`。右に「＋ 追加」ボタン（height 34, padding `0 14px`, radius 6, bg accent, 白文字 700 12.5px）。
-- **左ペイン**: 選択なし（ハイライト無し）。
-- **右ペイン**: 結果行を10件フラット表示（オーバーフローは切る＝スクロール）。
+- **左ペイン**: スコープは「すべて」（最上位の「すべて」がハイライト）。※スコープは常にどれか1つに当たっており、「選択なし」の状態は存在しない。
+- **右ペイン**: 全ブックマークを**タイトル昇順**で10件フラット表示（オーバーフローは切る＝スクロール）。先頭行が選択行としてハイライトされる。※HTMLモックは「最近のブックマーク（更新日時降順）」を想定しているが、並び順は**タイトル昇順が正**（非採用項目 #2）。
 - **バリエーション**: 2行（CSS Grid 完全ガイド / Figma ショートカット一覧）がファビコン取得失敗＝頭文字アバター。
 
 ### 1b — フォルダ絞り込み中
@@ -98,7 +100,7 @@ Chrome拡張の popup は最大 800×600 なので 760×560 は収まる。`html
 - 選択中フォルダ（`extensions`）は accent 塗り + 白 700、三角は `rgba(255,255,255,0.75)`。
 - **件数バッジ**: 行右端に `10.5px monospace #9AA1AE`（「すべて」は 128、末端フォルダは 7 / 12）。
 - 深い階層の名前は `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`。
-- **右ペイン**: メタ行にパンくず（`開発 / chrome / extensions 配下（サブフォルダを含む）— 5件`、区切り `/` は `#C2C6CF`、末端のみ `#1F2430` 500）。行のパスは孫フォルダまで表示し、**末端フォルダ名だけ `#3D51C4`** で強調。
+- **右ペイン**: メタ行にパンくず（`開発 / chrome / extensions の直下 — 5件`、区切り `/` は `#C2C6CF`、末端のみ `#1F2430` 500）。※HTMLモックの「配下（サブフォルダを含む）」は旧仕様であり、**直下のみ**に読み替える。行のパスは孫フォルダまで表示し、**末端フォルダ名だけ `#3D51C4`** で強調。
 
 ### 2b — 深い階層の扱い（5階層 / 省略）
 - **Purpose**: 220px 幅を超える深さでも破綻しない規則を示す。
@@ -135,15 +137,19 @@ padding: 0 16px; border-bottom: 1px solid #EFF1F4;
 
 | 操作 | 挙動 |
 |---|---|
-| ポップアップ表示 | 検索ボックスに自動フォーカス。結果は最近のブックマーク（更新日時降順、最大 200 件を仮想スクロール推奨） |
+| ポップアップ表示 | 検索ボックスに自動フォーカス。スコープは「すべて」で、全ブックマークを**タイトル昇順**（仮想スクロール）で表示。※「更新日時降順」は不採用（非採用項目 #2） |
 | 文字入力 | インクリメンタル検索（debounce 120ms 目安）。タイトル・URL・別名を対象に部分一致。**別名の一致を最上位にランク付け** |
-| フォルダクリック | 検索ボックス先頭にフォルダチップを挿入し、そのフォルダ **+ サブフォルダ配下**を対象に絞り込む。ツリー側もハイライト |
-| フォルダチップの `✕` / チップ直後で Backspace | 絞り込み解除 |
-| 三角クリック | 展開/折りたたみ（キー: `→` 展開 / `←` 折りたたみ）。展開状態は永続化 |
-| `↑ ↓` | 結果行のフォーカス移動、`Enter` で開く、`⌘/Ctrl + Enter` で新規タブ |
-| 行ダブルクリック / `E` | インライン編集モード（1d）へ。他行 dimmed |
-| 別名エリアクリック / `A` | 別名編集モード（1e）。`Enter` 確定、`,` 区切りでも確定、`Backspace`（空入力時）で直前チップ削除、チップ `✕` で個別削除 |
-| `Esc` | 編集キャンセル（変更を破棄）→ 通常表示に戻る |
+| フォルダ選択（クリック / 左ペインでのキーボード移動） | そのフォルダを**スコープ**にし、**直下のブックマークのみ**を右ペインに表示（サブフォルダは含めない）。ツリー側もハイライト。※旧仕様の「サブフォルダ配下も対象」は不採用 |
+| 検索ボックス先頭のフォルダチップ | **現在のスコープを可視化する表示要素**。チップ自体はスコープを操作する主体ではない（解除は `Escape` の段階戻り、「すべて」への復帰は左ペインの `Home`） |
+| 三角クリック | 展開/折りたたみ。展開状態は永続化。※キーボードでの展開/折りたたみは `Enter` のトグル（`←→` はペイン移動に使うため不採用） |
+| `↑ ↓` | 結果行の選択移動。検索ボックスにフォーカスがある状態で押すと、フォーカスが外れると同時に選択行が1つ移動する |
+| `Enter` / `⌘/Ctrl + Enter` | 選択行を現在タブ / 新規タブで開く。**フォーカス位置に関係なく**選択行が対象（選択行は常に存在し、既定は先頭行） |
+| `←` / `→` | ペイン移動。右ペインで `←` → 左ペインへ、左ペインで `→` → 右ペインへ。左ペイン内の `←` は親フォルダへ移動。**検索ボックス内ではキャレット移動専用**（ペイン移動には使わない） |
+| 行ダブルクリック / `F2`・`⌘/Ctrl + E` | インライン編集モード（1d）へ。他行 dimmed。※素キー `E` は「文字を打つと検索ボックスへ復帰」の共通ルールと衝突するため不採用 |
+| 別名エリアクリック / `⌘/Ctrl + ;` | 別名編集モード（1e）。`Enter` 確定、`,` 区切りでも確定、`Backspace`（空入力時）で直前チップ削除、チップ `✕` で個別削除。※素キー `A` は上と同じ理由で不採用 |
+| `Esc` | 編集中は編集キャンセル（変更を破棄）→ 通常表示に戻る。通常表示では**1段階だけ戻る**（左/右ペインにフォーカス → 検索ボックスへ / キーワードあり → クリア / スコープが「すべて」以外 → 「すべて」へ / いずれでもない → 閉じる） |
+| `Home`（左ペイン） | スコープを「すべて」へ一発で戻す |
+| 印字文字（左/右ペイン） | 検索ボックスへフォーカスが復帰する |
 | `⌘/Ctrl + S` または保存ボタン | 変更を確定 |
 | 行のチェックボックス / `⌘/Ctrl + クリック` | 複数選択。1件以上でヘッダーが一括操作バー（1f）に切替 |
 | `Shift + クリック` | 範囲選択 |
@@ -188,9 +194,11 @@ type Folder = {
 
 type UiState = {
   query: string;
-  folderFilter: string | null;        // フォルダチップ（null = 全体）
+  // スコープは常にどれか1つに当たっている（"すべて" を含む）。旧 `folderFilter`（チップの値）からの置き換え。
+  scopeFolderId: string | null;       // null = 「すべて」（全件が対象。それ以外は直下のみ）
+  focusArea: 'search' | 'result' | 'folderTree';  // フォーカスの3状態
   expandedFolderIds: Set<string>;     // ツリー開閉（chrome.storage.local に永続化）
-  focusedIndex: number;               // ↑↓ のフォーカス行
+  focusedIndex: number;               // 選択行（常に存在。既定は先頭）
   selectedIds: Set<string>;           // 複数選択（1f）
   editing:
     | { kind: 'none' }
@@ -202,7 +210,7 @@ type UiState = {
 ```
 
 **派生値（stateに持たない）**
-- `results` = `bookmarks` を `folderFilter`（サブフォルダ含む）+ `query` でフィルタし、スコア降順にソート
+- `results` = `bookmarks` を `scopeFolderId`（`null` = 全件 / それ以外は**直下のみ**）+ `query` でフィルタし、スコア降順にソート
 - スコア: 別名の完全一致 100 / 別名の前方一致 80 / 別名の部分一致 60 / タイトル前方一致 40 / タイトル部分一致 20 / URL部分一致 10。同点は `updatedAt` 降順
 - `matchedAliasIds` = 各結果でどの別名が一致したか（チップの accent 表示に使う）
 - `visibleTree` = `folders` + `expandedFolderIds` から算出。深さ5以上は子を2件で打ち切り（2b の「さらに N 件…」）
@@ -222,7 +230,11 @@ type UiState = {
 | `drag: null` | 8px ドラッグ | `drag` 設定 | ゴースト表示 |
 | `drag` | ドロップ | `null` | `chrome.bookmarks.move` を一括実行、トーストで undo |
 | `query` 変更 | 入力 | — | `focusedIndex` を 0 にリセット |
-| `folderFilter` 設定 | フォルダクリック | — | 祖先フォルダを自動展開 |
+| `scopeFolderId` 変更 | フォルダクリック / 左ペインでの `↑↓` 移動 | — | 祖先フォルダを自動展開、`focusedIndex` を 0 にリセット |
+| `focusArea: 'search'` | `↑↓` | `'result'` | 同時に `focusedIndex` を1つ移動 |
+| `focusArea: 'result'` | `←` | `'folderTree'` | — |
+| `focusArea: 'folderTree'` | `→` | `'result'` | — |
+| `focusArea: 'result' \| 'folderTree'` | 印字文字 / `Esc` | `'search'` | 印字文字はそのまま検索ボックスへ入力される |
 
 **データ取得**
 - 起動時: `chrome.bookmarks.getTree()` → フラット化して `bookmarks` / `folders` を構築。並行して `chrome.storage.local.get('aliases')`（`{ [bookmarkId]: string[] }`）をマージ。
@@ -236,7 +248,7 @@ type UiState = {
 | コンポーネント | 責務 | 主な props |
 |---|---|---|
 | `PopupShell` | 760×560 の外枠・角丸・影・3領域レイアウト | `children` |
-| `SearchHeader` | 検索ボックス、フォルダチップ、「＋ 追加」 | `query`, `folderFilter`, `onQueryChange`, `onClearFolder`, `onAdd` |
+| `SearchHeader` | 検索ボックス、フォルダチップ（スコープの可視化）、「＋ 追加」 | `query`, `scopeFolderId`, `focusArea`, `onQueryChange`, `onAdd` |
 | `BulkActionBar` | 一括操作バー（1f） | `count`, `onMove`, `onDelete`, `onClear` |
 | `FolderTree` | 再帰ツリー、開閉、選択、ドロップ先ハイライト、深さ省略 | `folders`, `expandedIds`, `selectedId`, `dropTargetId`, `onToggle`, `onSelect` |
 | `FolderTreeItem` | 1行（三角 / アイコン / 名前 / 件数）+ 子の再帰描画 | `folder`, `depth`, `state` |

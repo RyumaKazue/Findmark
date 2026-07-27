@@ -192,6 +192,7 @@ packages/storage/lib/
 **配置ドキュメント**:
 - `product-requirements.md` / `functional-design.md` / `architecture.md` / `repository-structure.md`(本書) / `development-guidelines.md` / `glossary.md`
 - `ideas/initial-requirements.md`: 初期要件(壁打ち成果物)
+- `ideas/keyboard-first-navigation.md`: キーボード完結ナビゲーションの仕様変更(壁打ち成果物・永続ドキュメントへの反映待ち)
 
 ---
 

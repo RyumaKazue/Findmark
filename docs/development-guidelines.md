@@ -33,7 +33,7 @@ function norm(s: any): string { }
 ```typescript
 class SearchEngine { }              // クラス: PascalCase
 interface AliasRecord { }           // インターフェース: PascalCase(I接頭辞は付けない)
-type SearchMode = 'LIST' | 'INLINE_EDIT' | 'ALIAS_EDIT' | 'DRAG' | 'PANEL';
+type SearchMode = 'LIST' | 'FOLDER_TREE' | 'INLINE_EDIT' | 'ALIAS_EDIT' | 'DRAG' | 'PANEL';
 const ResultRow = () => { };        // Reactコンポーネント: PascalCase
 ```
 
