@@ -9,6 +9,7 @@ interface PopupShellProps {
 /**
  * ポップアップの外枠（760×560・角丸12・影）と3領域レイアウト（docs/design ルートレイアウト）。
  * ヘッダー56 + ボディ（左ペイン220 + 右ペイン flex:1）。ペイン間に区切り線。
+ * キーボード操作（U8 モード状態機械）は Popup が document レベルのリスナーで一元処理する。
  */
 export const PopupShell = ({ header, sidebar, main }: PopupShellProps) => (
   <div className="bg-surface shadow-shell flex h-[560px] w-[760px] flex-col overflow-hidden rounded-xl">

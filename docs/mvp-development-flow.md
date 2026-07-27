@@ -229,7 +229,7 @@ graph TD
 | U5 | alias-store | 3 | ✅ 完了 (2026-07-25) | `.steering/20260725-alias-store/` |
 | U6 | search-engine | 2 | ✅ 完了 (2026-07-25) | `.steering/20260725-search-engine/` |
 | U7 | popup-search-shell | 1, 10, 5(基本) | ✅ 完了 (2026-07-25) | `.steering/20260725-popup-search-shell/` |
-| U8 | mode-keyboard | 6 | 未着手 | - |
+| U8 | mode-keyboard | 6 | ✅ 完了 (2026-07-27) | `.steering/20260726-mode-keyboard/` |
 | U9 | alias-editor | 3 | 未着手 | - |
 | U10 | inline-edit-delete-undo | 4 | 未着手 | - |
 | U11 | folder-scope-tree | 5 | 未着手 | - |
