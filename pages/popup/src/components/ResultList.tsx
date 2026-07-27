@@ -21,18 +21,28 @@ interface ResultListProps {
 /**
  * 右ペインの検索結果リスト（自前の仮想スクロール）。
  * 固定行高で可視範囲のみ描画し、件数増加に対して描画コストを一定化する（docs/architecture パフォーマンス）。
+ *
+ * スクロールコンテナは結果0件時（読み込み中・空状態）でも**常時マウント**する。こうしないと、初回マウント時点で
+ * 索引構築中（results 0 件）だとコンテナが DOM に無く `clientHeight` を計測できず、`viewportHeight` が 0 のまま固定され、
+ * `computeWindow` が空ウィンドウを返して結果到着後も何も描画されない（右ペインが真っ白になる）。
+ * 高さは `ResizeObserver` でも追従し、レイアウト確定・リサイズに追随する。
  */
 export const ResultList = ({ results, selectedIndex, emptyLabel, onOpen, onHover }: ResultListProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
 
-  // レイアウト確定後にビューポート高を取得する（flex:1 のため確定値になる）。
+  // ビューポート高を計測し、リサイズにも追従する（コンテナは常時マウントされているため確実に取得できる）。
   useLayoutEffect(() => {
     const el = containerRef.current;
-    if (el) {
-      setViewportHeight(el.clientHeight);
+    if (!el) {
+      return;
     }
+    const measure = () => setViewportHeight(el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   // 選択行が可視範囲外なら追従してスクロールする。
@@ -50,14 +60,6 @@ export const ResultList = ({ results, selectedIndex, emptyLabel, onOpen, onHover
     }
   }, [selectedIndex, results.length]);
 
-  if (results.length === 0) {
-    return (
-      <div className="text-ink-faint flex h-full items-center justify-center px-6 text-center text-[12.5px]">
-        {emptyLabel}
-      </div>
-    );
-  }
-
   const { startIndex, endIndex, offsetY, totalHeight } = computeWindow({
     scrollTop,
     viewportHeight,
@@ -68,23 +70,29 @@ export const ResultList = ({ results, selectedIndex, emptyLabel, onOpen, onHover
 
   return (
     <div ref={containerRef} onScroll={e => setScrollTop(e.currentTarget.scrollTop)} className="h-full overflow-auto">
-      {/* 総高スペーサ + 可視分のみ translateY で配置 */}
-      <div style={{ height: totalHeight, position: 'relative' }}>
-        <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
-          {visible.map((item, i) => {
-            const index = startIndex + i;
-            return (
-              <ResultRow
-                key={item.node.id}
-                item={item}
-                selected={index === selectedIndex}
-                onOpen={() => onOpen(index)}
-                onHover={() => onHover(index)}
-              />
-            );
-          })}
+      {results.length === 0 ? (
+        <div className="text-ink-faint flex h-full items-center justify-center px-6 text-center text-[12.5px]">
+          {emptyLabel}
         </div>
-      </div>
+      ) : (
+        // 総高スペーサ + 可視分のみ translateY で配置
+        <div style={{ height: totalHeight, position: 'relative' }}>
+          <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
+            {visible.map((item, i) => {
+              const index = startIndex + i;
+              return (
+                <ResultRow
+                  key={item.node.id}
+                  item={item}
+                  selected={index === selectedIndex}
+                  onOpen={() => onOpen(index)}
+                  onHover={() => onHover(index)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
