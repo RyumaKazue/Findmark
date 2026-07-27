@@ -130,6 +130,39 @@ export class SearchEngine {
     return this.sortResults(fallback.map(acc => this.toResultItem(acc)));
   }
 
+  /**
+   * 索引上で、指定 URL と同一の正規化ハッシュ（`hashUrl`）を持つエントリの別名を差し替える（同期）。
+   * 別名編集（U9）の結果を索引へ再構築なしで即時反映するために使う。別名は URL 正規化ハッシュで
+   * 紐付くため、生 URL 一致ではなく `hashUrl` 一致で対象を選ぶ（同一正規化 URL の複数エントリにも適用）。
+   * 不正な URL（`hashUrl` が throw）は握り潰してスキップし、索引全体を壊さない。
+   */
+  updateAliases(url: string, aliases: string[]): void {
+    let targetHash: string;
+    try {
+      targetHash = this.normalizer.hashUrl(url);
+    } catch (e) {
+      console.warn('[SearchEngine] 別名の索引反映に失敗しました（不正なURL）:', url, e);
+      return;
+    }
+    const nAliases = aliases.map(a => this.normalizer.normalizeText(a));
+    for (const entry of this.entries) {
+      if (entry.node.url === undefined) {
+        continue;
+      }
+      let entryHash: string;
+      try {
+        entryHash = this.normalizer.hashUrl(entry.node.url);
+      } catch {
+        continue;
+      }
+      if (entryHash !== targetHash) {
+        continue;
+      }
+      entry.aliases = [...aliases];
+      entry.nAliases = [...nAliases];
+    }
+  }
+
   private lookupAliases(url: string, aliasMap: Map<string, AliasRecord>): string[] {
     try {
       const hash = this.normalizer.hashUrl(url);

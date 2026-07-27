@@ -26,22 +26,23 @@ export class Normalizer {
 
   /**
    * URL 紐付けキー用の正規化。同じページを指す表記ゆれを 1 つの正規形へ寄せる。
-   * - フラグメント（`#...`）を除去（ページ内位置はページの同一性を変えない）
+   * - フラグメント（`#...`）は保持する。ハッシュルーティングの SPA（例: `.../new#settings/usage`）では
+   *   フラグメントがページを識別するため、除去すると別ページが同一キーに衝突し別名レコードを共有してしまう。
+   *   Chrome もフラグメント違いを別ブックマークとして保持するため、別名の同一性も URL 全体（フラグメント含む）に揃える。
    * - 末尾スラッシュを正規化（`/path/` → `/path`。ただしルート `/` 単体は保持）
    * - クエリ（`?...`）は保持（異なるクエリは別ページとみなし、誤結合を防ぐ）
    *
    * 前提: 呼び出し側は有効な絶対 URL を渡すこと。不正な URL の場合、`new URL()` が
    * `TypeError` を throw する。Normalizer は握り潰さず throw を素通しする（早期失敗）。
    *
-   * @example normalizeUrl('https://ex.com/a/b/?ref=x#top') === 'https://ex.com/a/b?ref=x'
+   * @example normalizeUrl('https://ex.com/a/b/?ref=x#top') === 'https://ex.com/a/b?ref=x#top'
    */
   normalizeUrl(raw: string): string {
     const u = new URL(raw);
-    u.hash = '';
     if (u.pathname.endsWith('/') && u.pathname !== '/') {
       u.pathname = u.pathname.slice(0, -1);
     }
-    return u.protocol + '//' + u.host + u.pathname + u.search;
+    return u.protocol + '//' + u.host + u.pathname + u.search + u.hash;
   }
 
   /**
