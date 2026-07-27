@@ -9,7 +9,10 @@ export type MatchedField = 'title' | 'folder' | 'alias';
 export interface SearchQuery {
   /** スペース区切りの AND 語（呼び出し側で分割済みの配列として渡す）。 */
   keywords: string[];
-  /** フォルダチップによる絞り込み。照合対象ではなく範囲フィルタとして適用する。 */
+  /**
+   * フォルダスコープ。照合対象ではなく範囲フィルタとして適用する。
+   * 未指定（`undefined`）は「すべて」＝全ブックマークが対象。指定時は当該フォルダの直下のみが対象。
+   */
   folderScope?: FolderScope;
 }
 
@@ -35,11 +38,10 @@ export interface SearchResultItem {
 }
 
 /**
- * フォルダ絞り込み（チップ方式）の範囲指定。照合対象ではなく範囲フィルタとして適用する。
+ * フォルダスコープの範囲指定。照合対象ではなく範囲フィルタとして適用する。
+ * 指定時は常に当該フォルダの直下のみが対象（サブフォルダは含めない）。
  */
 export interface FolderScope {
-  /** 絞り込み対象フォルダの ID（ID で保持する）。 */
+  /** スコープ対象フォルダの ID（ID で保持する。フォルダ名に "/" を含んでも壊れない）。 */
   folderId: string;
-  /** サブフォルダを含めるか（直下のみに絞るトグル）。 */
-  includeSubfolders: boolean;
 }

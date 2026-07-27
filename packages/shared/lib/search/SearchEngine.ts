@@ -31,8 +31,6 @@ interface SearchEntry {
   node: BookmarkNode;
   /** 上位→末端のフォルダ名(表示用。真のルートは含まない)。 */
   folderPath: string[];
-  /** 上位→末端の祖先フォルダ ID(folderScope の範囲判定用)。 */
-  folderIdPath: string[];
   /** 別名(原文)。 */
   aliases: string[];
   /** 正規化済みタイトル。 */
@@ -77,14 +75,13 @@ export class SearchEngine {
   buildIndex(tree: BookmarkNode[], aliasMap: Map<string, AliasRecord>): SearchEntry[] {
     const entries: SearchEntry[] = [];
 
-    const walk = (nodes: BookmarkNode[], folderPath: string[], folderIdPath: string[]): void => {
+    const walk = (nodes: BookmarkNode[], folderPath: string[]): void => {
       for (const node of nodes) {
         if (node.url !== undefined) {
           const aliases = this.lookupAliases(node.url, aliasMap);
           entries.push({
             node,
             folderPath,
-            folderIdPath,
             aliases,
             nTitle: this.normalizer.normalizeText(node.title),
             nFolders: folderPath.map(f => this.normalizer.normalizeText(f)),
@@ -98,14 +95,14 @@ export class SearchEngine {
         // 真のルート(parentId 無し)は自身のタイトルをパスに積まない(BookmarkService.getFolderPath と同じ意味論)。
         const isTrueRoot = node.parentId === undefined;
         if (isTrueRoot) {
-          walk(node.children, folderPath, folderIdPath);
+          walk(node.children, folderPath);
         } else {
-          walk(node.children, [...folderPath, node.title], [...folderIdPath, node.id]);
+          walk(node.children, [...folderPath, node.title]);
         }
       }
     };
 
-    walk(tree, [], []);
+    walk(tree, []);
     return entries;
   }
 
@@ -174,12 +171,10 @@ export class SearchEngine {
     }
   }
 
+  /** スコープ未指定(=「すべて」)は全件対象。指定時は当該フォルダの直下のみを対象とする。 */
   private inScope(entry: SearchEntry, scope: FolderScope | undefined): boolean {
     if (!scope) {
       return true;
-    }
-    if (scope.includeSubfolders) {
-      return entry.folderIdPath.includes(scope.folderId);
     }
     return entry.node.parentId === scope.folderId;
   }

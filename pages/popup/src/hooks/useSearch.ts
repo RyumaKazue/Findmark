@@ -22,8 +22,9 @@ export interface UseSearchResult {
  *
  * - 起動時に1回だけ `SearchEngine.loadIndex`（`getTree`/`getAll` → 索引構築）を実行する。
  * - `query` の変化に対し、`debounce 120ms` 後に U6 の同期 `search()` を実行する。
- * - `folderId` が指定されると、そのフォルダ配下（サブフォルダ含む）に絞り込む（左ペインのフォルダ選択）。
- *   検索ボックスへのフォルダチップ挿入・直下トグル・ツリー⇄チップ同期は U11。空クエリは U6 のブラウズ（タイトル昇順）。
+ * - `folderId` が指定されると、そのフォルダの直下のブックマークのみに絞り込む（左ペインのフォルダ選択＝スコープ）。
+ *   「サブフォルダを含む」指定は持たない（直下のみ／「すべて」の2択）。検索ボックスのフォルダチップはスコープの
+ *   可視化のみを担う（操作の主体ではない）。ツリーのキーボード操作・スコープ追従・展開永続は U11。空クエリは U6 のブラウズ（タイトル昇順）。
  */
 export const useSearch = (query: string, folderId: string | null): UseSearchResult => {
   const [isIndexReady, setIsIndexReady] = useState(false);
@@ -61,7 +62,7 @@ export const useSearch = (query: string, folderId: string | null): UseSearchResu
       return [];
     }
     const keywords = debouncedQuery.trim().split(/\s+/).filter(Boolean);
-    const folderScope = folderId ? { folderId, includeSubfolders: true } : undefined;
+    const folderScope = folderId ? { folderId } : undefined;
     return searchEngine.search({ keywords, folderScope });
   }, [debouncedQuery, isIndexReady, folderId]);
 
