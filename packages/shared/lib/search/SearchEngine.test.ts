@@ -139,30 +139,36 @@ describe('SearchEngine — 照合フィールド(タイトル/フォルダ名/�
   });
 });
 
-describe('SearchEngine — folderScope(範囲フィルタ・照合対象からは除外)', () => {
-  it('includeSubfolders=true でサブフォルダ配下も範囲に含める', async () => {
+describe('SearchEngine — folderScope(範囲フィルタ・常に直下のみ・照合対象からは除外)', () => {
+  it('指定フォルダの直下のみに絞る', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
-    const results = engine.search({ keywords: [], folderScope: { folderId: '2', includeSubfolders: true } });
-    expect(results.map(r => r.node.id).sort()).toEqual(['11', '12']);
+    const results = engine.search({ keywords: [], folderScope: { folderId: '2' } });
+    expect(results.map(r => r.node.id)).toEqual(['11']);
   });
 
-  it('includeSubfolders=false で直下のみに絞る', async () => {
+  it('サブフォルダ配下は範囲に含まれない(孫は対象外)', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
-    const results = engine.search({ keywords: [], folderScope: { folderId: '2', includeSubfolders: false } });
-    expect(results.map(r => r.node.id)).toEqual(['11']);
+    const results = engine.search({ keywords: [], folderScope: { folderId: '2' } });
+    expect(results.map(r => r.node.id)).not.toContain('12');
   });
 
   it('フォルダ名に "/" を含んでいても範囲フィルタが壊れない', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
-    const results = engine.search({ keywords: [], folderScope: { folderId: '5', includeSubfolders: false } });
+    const results = engine.search({ keywords: [], folderScope: { folderId: '5' } });
     expect(results.map(r => r.node.id)).toEqual(['14']);
   });
 
   it('folderScope は照合対象に含まれない(範囲外にフォルダ名と同じキーワードを入れても無関係の項目はヒットしない)', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
     // '料理' というキーワードは料理フォルダ配下(recipeBookmark)にしかヒットしない。
-    const results = engine.search({ keywords: ['料理'], folderScope: { folderId: '2', includeSubfolders: true } });
+    const results = engine.search({ keywords: ['料理'], folderScope: { folderId: '2' } });
     expect(results).toEqual([]);
+  });
+
+  it('folderScope 未指定なら全ブックマークが対象になる(=「すべて」)', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    const results = engine.search({ keywords: [] });
+    expect(results.map(r => r.node.id).sort()).toEqual(['10', '11', '12', '13', '14', '15']);
   });
 });
 

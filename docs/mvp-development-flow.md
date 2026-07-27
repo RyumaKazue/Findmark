@@ -244,7 +244,7 @@ graph TD
 | U7 | popup-search-shell | 1, 10, 5(基本) | ✅ 完了 (2026-07-25) | `.steering/20260725-popup-search-shell/` |
 | U8 | mode-keyboard | 6 | ✅ 完了 (2026-07-27) | `.steering/20260726-mode-keyboard/` |
 | U9 | alias-editor | 3 | ✅ 完了 (2026-07-27) | `.steering/20260727-alias-editor/` |
-| U6a | search-scope-revision | 2, 5 | 未着手(仕様変更対応) | - |
+| U6a | search-scope-revision | 2, 5 | ✅ 完了 (2026-07-28) | `.steering/20260728-search-scope-revision/` |
 | U8a | focus-three-state | 1, 6 | 未着手(仕様変更対応) | - |
 | U10 | inline-edit-delete-undo | 4 | 未着手 | - |
 | U11 | folder-scope-tree | 5 | 未着手 | - |
