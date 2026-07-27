@@ -32,13 +32,19 @@ describe('Normalizer.normalizeText', () => {
 });
 
 describe('Normalizer.normalizeUrl', () => {
-  it('フラグメント(#...)を除去する', () => {
-    expect(normalizer.normalizeUrl('https://ex.com/docs#install')).toBe('https://ex.com/docs');
+  it('フラグメント(#...)を保持する（ハッシュルーティングの SPA でページを識別するため）', () => {
+    expect(normalizer.normalizeUrl('https://ex.com/docs#install')).toBe('https://ex.com/docs#install');
   });
 
-  it('フラグメントだけ異なる URL は同一の正規形に寄る', () => {
-    expect(normalizer.normalizeUrl('https://ex.com/docs#install')).toBe(
+  it('フラグメントだけ異なる URL は別の正規形になる', () => {
+    expect(normalizer.normalizeUrl('https://ex.com/docs#install')).not.toBe(
       normalizer.normalizeUrl('https://ex.com/docs#usage'),
+    );
+  });
+
+  it('ハッシュルーティング SPA の別ページを別 URL として区別する（回帰: 別名の誤共有防止）', () => {
+    expect(normalizer.normalizeUrl('https://claude.ai/new#settings/usage')).not.toBe(
+      normalizer.normalizeUrl('https://claude.ai/new'),
     );
   });
 
@@ -63,8 +69,8 @@ describe('Normalizer.normalizeUrl', () => {
     );
   });
 
-  it('フラグメント除去・末尾スラッシュ・クエリ保持が同時に効く', () => {
-    expect(normalizer.normalizeUrl('https://ex.com/a/b/?ref=x#top')).toBe('https://ex.com/a/b?ref=x');
+  it('フラグメント保持・末尾スラッシュ・クエリ保持が同時に効く', () => {
+    expect(normalizer.normalizeUrl('https://ex.com/a/b/?ref=x#top')).toBe('https://ex.com/a/b?ref=x#top');
   });
 
   it('不正な URL では throw する', () => {
@@ -77,8 +83,8 @@ describe('Normalizer.hashUrl', () => {
     expect(normalizer.hashUrl('https://ex.com/a')).toBe(normalizer.hashUrl('https://ex.com/a'));
   });
 
-  it('フラグメントだけ異なる URL は同一ハッシュに寄る', () => {
-    expect(normalizer.hashUrl('https://ex.com/docs#a')).toBe(normalizer.hashUrl('https://ex.com/docs#b'));
+  it('フラグメントだけ異なる URL は別ハッシュになる（別ページとして別名を独立させる）', () => {
+    expect(normalizer.hashUrl('https://ex.com/docs#a')).not.toBe(normalizer.hashUrl('https://ex.com/docs#b'));
   });
 
   it('末尾スラッシュの有無を吸収して同一ハッシュになる', () => {

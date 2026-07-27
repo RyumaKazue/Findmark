@@ -216,7 +216,7 @@ class Normalizer {
   // 検索/別名比較用: NFKC → 小文字化 → カタカナ→ひらがな統一
   normalizeText(input: string): string;
 
-  // URL紐付けキー用: フラグメント除去・末尾スラッシュ正規化(クエリは保持)
+  // URL紐付けキー用: 末尾スラッシュ正規化(クエリ・フラグメントは保持。SPAのハッシュルーティングを別ページとして区別)
   normalizeUrl(url: string): string;
   // normalizeUrl の結果を同期ハッシュ化(FNV-1a 32/64bit を採用し同期処理にする)
   hashUrl(url: string): string;
@@ -637,11 +637,13 @@ function normalizeText(s: string): string {
 ```typescript
 function normalizeUrl(raw: string): string {
   const u = new URL(raw);
-  u.hash = '';                       // フラグメント除去
   if (u.pathname.endsWith('/') && u.pathname !== '/')
     u.pathname = u.pathname.slice(0, -1);  // 末尾スラッシュ正規化
   // クエリ(u.search)は保持する。異なるクエリは別ページとみなす(過剰な統合で別名が誤結合するのを防ぐ)
-  return u.protocol + '//' + u.host + u.pathname + u.search;
+  // フラグメント(u.hash)も保持する。ハッシュルーティングの SPA(例: .../new#settings/usage)では
+  // フラグメントがページを識別するため、除去すると別ページが同一 urlHash に衝突し別名を共有してしまう。
+  // Chrome もフラグメント違いを別ブックマークとして扱うため、別名の同一性も URL 全体に揃える。
+  return u.protocol + '//' + u.host + u.pathname + u.search + u.hash;
 }
 
 // 同期ハッシュ(FNV-1a)。crypto.subtle.digest は非同期のため採用しない
