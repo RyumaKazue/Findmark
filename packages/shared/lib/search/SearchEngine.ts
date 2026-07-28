@@ -160,6 +160,53 @@ export class SearchEngine {
     }
   }
 
+  /**
+   * 索引上のエントリのタイトル/URLを部分更新する(同期・U10)。リネーム/URL編集の結果を索引の
+   * 全再構築なしに反映するために使う。`id` が一致するエントリが無ければ何もしない。
+   *
+   * URL を変更した場合、別名は引き継がない(別名は URL 正規化ハッシュで紐付くため、URL が変われば
+   * 別レコードになる。`updateAliases` の「hashUrl 一致で適用」という既存の意味論と整合させる)。
+   */
+  updateNode(id: string, patch: { title?: string; url?: string }): void {
+    const entry = this.entries.find(e => e.node.id === id);
+    if (!entry) {
+      return;
+    }
+    if (patch.title !== undefined) {
+      entry.node = { ...entry.node, title: patch.title };
+      entry.nTitle = this.normalizer.normalizeText(patch.title);
+    }
+    if (patch.url !== undefined) {
+      entry.node = { ...entry.node, url: patch.url };
+      entry.aliases = [];
+      entry.nAliases = [];
+    }
+  }
+
+  /** 索引上のエントリを削除する(同期・U10)。`id` が一致するエントリが無ければ何もしない。 */
+  removeNode(id: string): void {
+    const index = this.entries.findIndex(e => e.node.id === id);
+    if (index === -1) {
+      return;
+    }
+    this.entries.splice(index, 1);
+  }
+
+  /**
+   * 索引へエントリを追加する(同期・U10)。削除アンドゥ・現在ページ登録(U14)等、
+   * chrome API 側で作成済みのノードを索引へ反映するために使う。
+   */
+  addNode(node: BookmarkNode, folderPath: string[], aliases: string[]): void {
+    this.entries.push({
+      node,
+      folderPath,
+      aliases,
+      nTitle: this.normalizer.normalizeText(node.title),
+      nFolders: folderPath.map(f => this.normalizer.normalizeText(f)),
+      nAliases: aliases.map(a => this.normalizer.normalizeText(a)),
+    });
+  }
+
   private lookupAliases(url: string, aliasMap: Map<string, AliasRecord>): string[] {
     try {
       const hash = this.normalizer.hashUrl(url);

@@ -1,10 +1,11 @@
 import '@src/Popup.css';
 import { withErrorBoundary } from '@extension/shared';
-import { ErrorDisplay } from '@extension/ui';
+import { ErrorDisplay, cn } from '@extension/ui';
 import { FolderTree } from '@src/components/FolderTree';
 import { PopupShell } from '@src/components/PopupShell';
 import { ResultList } from '@src/components/ResultList';
 import { SearchHeader } from '@src/components/SearchHeader';
+import { Toast } from '@src/components/Toast';
 import {
   isSearchFirstExempt,
   isSearchFirstTriggerKey,
@@ -13,9 +14,12 @@ import {
   toFocusArea,
 } from '@src/hooks/modeMachine';
 import { useMode } from '@src/hooks/useMode';
+import { useRowActions } from '@src/hooks/useRowActions';
 import { useSearch } from '@src/hooks/useSearch';
+import { useUndo } from '@src/hooks/useUndo';
 import { aliasStore, bookmarkService } from '@src/services';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CommitPlan } from '@src/components/inlineEditModel';
 import type { ListFocus } from '@src/hooks/modeMachine';
 
 /**
@@ -40,13 +44,19 @@ const Popup = () => {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   // LIST モード内のフォーカス位置（検索ボックス/右ペイン）。暫定初期値は 'search'（上記 JSDoc 参照）。
   const [listFocus, setListFocus] = useState<ListFocus>('search');
-  const { results, isIndexReady, updateAliases } = useSearch(query, selectedFolderId);
+  const { results, isIndexReady, updateAliases, refresh } = useSearch(query, selectedFolderId);
   const mode = useMode();
+  const undo = useUndo();
+  const rowActions = useRowActions(refresh, undo.register);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // 別名編集（ALIAS_EDIT）の対象行。mode.targetId（node.id）から現在の結果を引く。
   const editingAliasId = mode.mode === 'ALIAS_EDIT' ? mode.targetId : null;
   const editingItem = editingAliasId ? (results.find(r => r.node.id === editingAliasId) ?? null) : null;
+
+  // インライン編集（INLINE_EDIT）の対象行。mode.targetId（node.id）から現在の結果を引く（U10）。
+  const editingInlineId = mode.mode === 'INLINE_EDIT' ? mode.targetId : null;
+  const editingInlineItem = editingInlineId ? (results.find(r => r.node.id === editingInlineId) ?? null) : null;
 
   // クエリ or フォルダ選択が変わったら選択行を先頭へ戻す（docs/design: 絞り込み変更で focusedIndex=0）。
   useEffect(() => {
@@ -72,7 +82,7 @@ const Popup = () => {
     [results],
   );
 
-  const { enterFolderTree, enterAliasEdit, exitToList } = mode;
+  const { enterFolderTree, enterAliasEdit, enterInlineEdit, exitToList } = mode;
 
   // 検索ボックスへフォーカスを戻す（FOLDER_TREE からの復帰も兼ねる）。検索ファースト復帰・Escape の
   // 1段目・別名編集終了などから共通で呼ばれる（U8a）。
@@ -134,6 +144,56 @@ const Popup = () => {
     }
   }, [mode.mode, editingItem, exitToList]);
 
+  // インライン編集に入る（選択行を対象にする）。別名編集と同じパターン（U10）。
+  const enterInlineEditAt = useCallback(
+    (index: number) => {
+      const id = results[index]?.node.id;
+      if (!id) {
+        return;
+      }
+      setSelectedIndex(index);
+      exitToList();
+      enterInlineEdit(id);
+    },
+    [results, exitToList, enterInlineEdit],
+  );
+
+  // インライン編集の確定内容を反映し LIST へ戻る。InlineEdit は不正な URL では onCommit を
+  // 呼ばない（コンポーネント内に留まる）ため、ここに来る plan は 'update'/'unchanged' のみ。
+  const handleCommitEdit = useCallback(
+    (plan: CommitPlan) => {
+      if (editingInlineItem) {
+        void rowActions.commitEdit(editingInlineItem, plan);
+      }
+      focusSearch();
+    },
+    [editingInlineItem, rowActions, focusSearch],
+  );
+
+  // インライン編集を破棄して LIST へ戻る（変更は保存しない）。
+  const handleCancelEdit = useCallback(() => {
+    focusSearch();
+  }, [focusSearch]);
+
+  // 行を削除する（アンドゥはトースト/Ctrl+Z から発動する）。
+  const handleDeleteAt = useCallback(
+    (index: number) => {
+      const item = results[index];
+      if (!item) {
+        return;
+      }
+      void rowActions.deleteRow(item);
+    },
+    [results, rowActions],
+  );
+
+  // インライン編集の対象が結果から消えた場合（検索条件変更等）は穏当に LIST へ戻す。
+  useEffect(() => {
+    if (mode.mode === 'INLINE_EDIT' && editingInlineItem === null) {
+      exitToList();
+    }
+  }, [mode.mode, editingInlineItem, exitToList]);
+
   // Escape を1段階ずつ解決する（U8a: 検索ボックスへ戻る → キーワードクリア → フォルダ絞り込み解除 → 閉じる）。
   const currentFocusArea = toFocusArea(mode.mode, listFocus);
   const handleEscapeStep = useCallback(() => {
@@ -156,6 +216,7 @@ const Popup = () => {
   // モード状態機械に基づくキー操作を document レベルで一元処理する。
   // 検索ボックス外（左ペインのフォルダボタン等）にフォーカスがあっても LIST/FOLDER_TREE のキー操作が一貫して効く。
   const { mode: currentMode, resolveKey } = mode;
+  const { pending: undoPending, undoLatest } = undo;
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // IME 変換確定の Enter/Escape 等を操作として扱わない（誤確定・誤クローズ防止）。
@@ -165,12 +226,35 @@ const Popup = () => {
       const input = searchInputRef.current;
       const inInput = input !== null && e.target === input;
 
+      // アンドゥ（Ctrl/Cmd+Z）はトースト表示中（保持あり）のときのみ乗っ取る。ただし自前の
+      // 文字入力 UI を持つモード（INLINE_EDIT/ALIAS_EDIT/PANEL）ではネイティブの取り消し
+      // （フォーム内テキストの入力取り消し）を優先し、乗っ取らない（`isSearchFirstExempt` と
+      // 同じ判定を再利用。実装検証で「削除直後5秒以内に別行を編集し始めた場合、編集中の
+      // テキスト取り消しのつもりの Ctrl+Z が無関係な削除の復元を誤発動させる」懸念が指摘されたため）。
+      // 保持が無ければ何もせずネイティブの取り消しに委ねる（U10）。
+      if (resolveShortcutIntent(e) === 'undo' && undoPending && !isSearchFirstExempt(currentMode)) {
+        e.preventDefault();
+        undoLatest();
+        return;
+      }
+
       if (currentMode === 'LIST') {
-        // モード入口ショートカット（U8）。本単位では別名編集（Ctrl/Cmd+;）のみ結線する
-        //（inline-edit=U10 / panel=U12 は該当単位で結線）。
-        if (resolveShortcutIntent(e) === 'alias-edit' && results.length > 0) {
+        // モード入口/行操作ショートカット（U8・U10）。
+        const shortcutIntent = resolveShortcutIntent(e);
+        if (shortcutIntent === 'alias-edit' && results.length > 0) {
           e.preventDefault();
           enterAliasEditAt(selectedIndex);
+          return;
+        }
+        if (shortcutIntent === 'inline-edit' && results.length > 0) {
+          e.preventDefault();
+          enterInlineEditAt(selectedIndex);
+          return;
+        }
+        // 検索ボックスにフォーカスがある間の Delete は文字の前方削除のまま（ブックマークを削除しない）。
+        if (shortcutIntent === 'delete' && listFocus === 'result' && results.length > 0) {
+          e.preventDefault();
+          handleDeleteAt(selectedIndex);
           return;
         }
         const intent = resolveKey(e, listFocus);
@@ -264,35 +348,63 @@ const Popup = () => {
     openAt,
     handleEscapeStep,
     enterAliasEditAt,
+    enterInlineEditAt,
+    handleDeleteAt,
     enterFolderTree,
     exitToList,
     leaveSearch,
     focusSearch,
     results.length,
+    undoPending,
+    undoLatest,
   ]);
 
+  // INLINE_EDIT 中はヘッダーと左ペインを dimmed にする（デザイン状態1d。docs/design「他要素: opacity 0.45」）。
+  const dimHeaderAndSidebar = mode.mode === 'INLINE_EDIT';
+
   return (
-    <PopupShell
-      header={<SearchHeader query={query} onQueryChange={setQuery} inputRef={searchInputRef} />}
-      sidebar={
-        <div className={mode.mode === 'FOLDER_TREE' ? 'shadow-focus-ring h-full rounded-md' : 'h-full'}>
-          <FolderTree selectedFolderId={selectedFolderId} onSelectFolder={setSelectedFolderId} />
-        </div>
-      }
-      main={
-        <ResultList
-          results={results}
-          selectedIndex={selectedIndex}
-          emptyLabel={isIndexReady ? '一致するブックマークがありません' : '読み込み中…'}
-          editingAliasId={editingAliasId}
-          onOpen={openAt}
-          onHover={setSelectedIndex}
-          onEnterAliasEdit={enterAliasEditAt}
-          onCommitAliases={commitAliases}
-          onCloseAliasEdit={closeAliasEdit}
-        />
-      }
-    />
+    <div className="relative">
+      <PopupShell
+        header={
+          <div className={dimHeaderAndSidebar ? 'opacity-45' : undefined}>
+            <SearchHeader query={query} onQueryChange={setQuery} inputRef={searchInputRef} />
+          </div>
+        }
+        sidebar={
+          <div
+            className={cn(
+              'h-full',
+              mode.mode === 'FOLDER_TREE' && 'shadow-focus-ring rounded-md',
+              dimHeaderAndSidebar && 'opacity-45',
+            )}>
+            <FolderTree selectedFolderId={selectedFolderId} onSelectFolder={setSelectedFolderId} />
+          </div>
+        }
+        main={
+          <ResultList
+            results={results}
+            selectedIndex={selectedIndex}
+            emptyLabel={isIndexReady ? '一致するブックマークがありません' : '読み込み中…'}
+            editingAliasId={editingAliasId}
+            editingInlineId={editingInlineId}
+            onOpen={openAt}
+            onHover={setSelectedIndex}
+            onEnterAliasEdit={enterAliasEditAt}
+            onCommitAliases={commitAliases}
+            onCloseAliasEdit={closeAliasEdit}
+            onEnterInlineEdit={enterInlineEditAt}
+            onCommitEdit={handleCommitEdit}
+            onCancelEdit={handleCancelEdit}
+            onDeleteRow={handleDeleteAt}
+          />
+        }
+      />
+      {undo.pending ? (
+        <Toast message={undo.pending.label} actionLabel="元に戻す" onAction={undoLatest} onDismiss={undo.dismiss} />
+      ) : rowActions.error ? (
+        <Toast message={rowActions.error} onDismiss={rowActions.clearError} tone="danger" />
+      ) : null}
+    </div>
   );
 };
 
