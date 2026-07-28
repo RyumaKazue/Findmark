@@ -15,6 +15,12 @@ export interface UseSearchResult {
    * `SearchEngine.updateAliases`（メモリ内更新）を実行し、索引バージョンを進めて `results` を再計算させる。
    */
   updateAliases: (url: string, aliases: string[]) => void;
+  /**
+   * 現在の索引・クエリ・フォルダ絞り込みで `results` を再計算する（U10）。
+   * インライン編集（`updateNode`）・削除（`removeNode`）・削除アンドゥ（`addNode`）等、
+   * `SearchEngine` の索引をメモリ内更新した直後に呼び、再検索なしで表示へ即時反映する。
+   */
+  refresh: () => void;
 }
 
 /**
@@ -71,15 +77,20 @@ export const useSearch = (query: string, folderId: string | null): UseSearchResu
     setResults(runSearch());
   }, [runSearch]);
 
+  // 現在の索引・クエリ・フォルダ絞り込みで再検索し、results を最新化する（U10）。
+  const refresh = useCallback(() => {
+    setResults(runSearch());
+  }, [runSearch]);
+
   // 別名編集の結果を索引へ反映（メモリ内更新）し、即座に再検索して表示を最新化する。
   // 永続化（AliasStore.upsert）は呼び出し側が行う。
   const updateAliases = useCallback(
     (url: string, aliases: string[]) => {
       searchEngine.updateAliases(url, aliases);
-      setResults(runSearch());
+      refresh();
     },
-    [runSearch],
+    [refresh],
   );
 
-  return { results, isIndexReady, updateAliases };
+  return { results, isIndexReady, updateAliases, refresh };
 };

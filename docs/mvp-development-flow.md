@@ -252,7 +252,7 @@ graph TD
 | U9 | alias-editor | 3 | ✅ 完了 (2026-07-27) | `.steering/20260727-alias-editor/` |
 | U6a | search-scope-revision | 2, 5 | ✅ 完了 (2026-07-28) | `.steering/20260728-search-scope-revision/` |
 | U8a | focus-three-state | 1, 6 | ✅ 完了 (2026-07-28) | `.steering/20260728-focus-three-state/` |
-| U10 | inline-edit-delete-undo | 4 | 未着手 | - |
+| U10 | inline-edit-delete-undo | 4 | ✅ 完了 (2026-07-28) | `.steering/20260728-inline-edit-delete-undo/` |
 | U11 | folder-scope-tree | 5 | 未着手 | - |
 | U12 | folder-move-dnd | 7 | 未着手 | - |
 | U13 | multi-select-bulk | 8 | 未着手 | - |

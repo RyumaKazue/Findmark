@@ -128,6 +128,8 @@ const hasCommandModifier = (e: KeyLike): boolean => Boolean(e.ctrlKey) || Boolea
 
 /**
  * 現在モード・キー入力・（LIST の場合の）フォーカス位置からインテントを解決する（副作用なし）。
+ * `listFocus` は LIST 以外のモードでは参照されないため省略可能（既定 `'search'`）。U10 で
+ * `InlineEdit` が `resolveKeyIntent('INLINE_EDIT', e)` を第3引数なしで呼ぶために追加した。
  * functional-design「既定モードのキー挙動（フォーカス位置別）」「編集モードのキー挙動」表に忠実:
  * - LIST + 検索ボックス: ↑↓=検索欄を離脱しつつ選択行を1つ動かす / ←→・Home=none（ネイティブのキャレット移動・
  *   クエリ途中の修正を温存するため、意図的に何も割り当てない）/ Enter=開く / Escape=段階戻り（起点）
@@ -139,7 +141,7 @@ const hasCommandModifier = (e: KeyLike): boolean => Boolean(e.ctrlKey) || Boolea
  * - PANEL: 上下=候補移動 / Enter=決定 / Escape=閉じる
  * - DRAG: Escape=中止のみ（上下/Enter は無効）
  */
-const resolveKeyIntent = (mode: Mode, e: KeyLike, listFocus: ListFocus): KeyIntent => {
+const resolveKeyIntent = (mode: Mode, e: KeyLike, listFocus: ListFocus = 'search'): KeyIntent => {
   switch (mode) {
     case 'LIST':
       if (listFocus === 'search') {
@@ -255,8 +257,12 @@ const isSearchFirstTriggerKey = (e: PrintableKeyLike): boolean => {
 const isSearchFirstExempt = (mode: Mode): boolean =>
   mode === 'INLINE_EDIT' || mode === 'ALIAS_EDIT' || mode === 'PANEL';
 
-/** モード入口ショートカットの意図（対象行 ID は呼び出し側が与える）。 */
-type ShortcutIntent = 'inline-edit' | 'alias-edit' | 'panel';
+/**
+ * モード入口ショートカットの意図（対象行 ID は呼び出し側が与える）。
+ * `delete`/`undo`（U10）はモード遷移を伴わないため厳密には「モード入口」ではないが、
+ * 対象未確定のまま LIST で解決するという性質が同じため同じ関数・型に含める。
+ */
+type ShortcutIntent = 'inline-edit' | 'alias-edit' | 'panel' | 'delete' | 'undo';
 
 /**
  * モード入口ショートカットの定義（ドキュメント兼マッチング用の単一集約）。
@@ -266,21 +272,28 @@ const SHORTCUTS = {
   inlineEdit: 'F2 / Ctrl(Cmd)+E',
   aliasEdit: 'Ctrl(Cmd)+;',
   panel: 'Ctrl(Cmd)+M',
+  delete: 'Delete',
+  undo: 'Ctrl(Cmd)+Z',
 } as const;
 
 /**
- * LIST でのモード入口ショートカットを解決する（対象未確定のため意図のみ返す）。
- * 呼び出し側が現在の対象行 ID を添えて `enterInlineEdit`/`enterAliasEdit`/`enterPanel` を呼ぶ。
+ * LIST でのモード入口ショートカット・行操作ショートカットを解決する（対象未確定のため意図のみ返す）。
+ * 呼び出し側が現在の対象行 ID を添えて `enterInlineEdit`/`enterAliasEdit`/`enterPanel` を呼ぶか、
+ * `delete`/`undo` の場合はフォーカス位置・アンドゥ保持の有無を見て実行する（U10・Popup 側の責務）。
  */
 const resolveShortcutIntent = (e: KeyLike): ShortcutIntent | null => {
   // F2 は修飾なし。
   if (e.key === 'F2' && !e.altKey) return 'inline-edit';
+  // Delete は修飾なし（呼び出し側でフォーカス位置により有効/無効を判断する）。
+  if (e.key === 'Delete' && !hasCommandModifier(e) && !e.altKey && !e.shiftKey) return 'delete';
   const cmd = hasCommandModifier(e);
   if (!cmd || e.altKey) return null;
   const key = e.key.toLowerCase();
   if (key === 'e') return 'inline-edit';
   if (key === ';') return 'alias-edit';
   if (key === 'm') return 'panel';
+  // Ctrl/Cmd+Z のみをアンドゥとする（Shift 付き = やり直しは未定義のため区別して弾く）。
+  if (key === 'z' && !e.shiftKey) return 'undo';
   return null;
 };
 

@@ -117,6 +117,12 @@ describe('resolveKeyIntent', () => {
     expect(resolveKeyIntent('INLINE_EDIT', { key: 'ArrowDown' }, 'search')).toBe('none');
   });
 
+  it('INLINE_EDIT: listFocus を省略しても同じ結果になる（U10・第3引数は LIST 以外で未参照）', () => {
+    expect(resolveKeyIntent('INLINE_EDIT', { key: 'Enter' })).toBe('inline:confirm');
+    expect(resolveKeyIntent('INLINE_EDIT', { key: 'Escape' })).toBe('inline:discard');
+    expect(resolveKeyIntent('INLINE_EDIT', { key: 'ArrowUp' })).toBe('none');
+  });
+
   it('ALIAS_EDIT: ↑↓=候補移動 / Enter=確定 / Escape=編集終了', () => {
     expect(resolveKeyIntent('ALIAS_EDIT', { key: 'ArrowUp' }, 'search')).toBe('alias:candidate-up');
     expect(resolveKeyIntent('ALIAS_EDIT', { key: 'ArrowDown' }, 'search')).toBe('alias:candidate-down');
@@ -254,5 +260,26 @@ describe('resolveShortcutIntent', () => {
     expect(resolveShortcutIntent({ key: 'm' })).toBeNull();
     expect(resolveShortcutIntent({ key: 'a', ctrlKey: true })).toBeNull();
     expect(resolveShortcutIntent({ key: 'e', ctrlKey: true, altKey: true })).toBeNull();
+  });
+
+  it('修飾なしの Delete → delete（U10）', () => {
+    expect(resolveShortcutIntent({ key: 'Delete' })).toBe('delete');
+  });
+
+  it('修飾付きの Delete は delete にしない', () => {
+    expect(resolveShortcutIntent({ key: 'Delete', ctrlKey: true })).toBeNull();
+    expect(resolveShortcutIntent({ key: 'Delete', metaKey: true })).toBeNull();
+    expect(resolveShortcutIntent({ key: 'Delete', altKey: true })).toBeNull();
+    expect(resolveShortcutIntent({ key: 'Delete', shiftKey: true })).toBeNull();
+  });
+
+  it('Ctrl(⌘)+Z → undo（U10）', () => {
+    expect(resolveShortcutIntent({ key: 'z', ctrlKey: true })).toBe('undo');
+    expect(resolveShortcutIntent({ key: 'Z', metaKey: true })).toBe('undo');
+  });
+
+  it('Ctrl(⌘)+Shift+Z は undo にしない（やり直しは未定義）', () => {
+    expect(resolveShortcutIntent({ key: 'z', ctrlKey: true, shiftKey: true })).toBeNull();
+    expect(resolveShortcutIntent({ key: 'Z', metaKey: true, shiftKey: true })).toBeNull();
   });
 });

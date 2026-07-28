@@ -340,3 +340,69 @@ describe('SearchEngine — updateAliases(別名編集の索引即時反映)', ()
     expect(engine.search({ keywords: ['ぎっと'] }).map(r => r.node.id)).toEqual(['10']);
   });
 });
+
+describe('SearchEngine — updateNode(リネーム/URL編集の索引即時反映・U10)', () => {
+  it('タイトル変更で新タイトルにヒットし旧タイトルではヒットしなくなる', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    expect(engine.search({ keywords: ['github'] }).map(r => r.node.id)).toEqual(['10']);
+
+    engine.updateNode('10', { title: 'ハブサイト' });
+
+    expect(engine.search({ keywords: ['github'] })).toEqual([]);
+    const results = engine.search({ keywords: ['ハブサイト'] });
+    expect(results.map(r => r.node.id)).toEqual(['10']);
+    expect(results[0].node.title).toBe('ハブサイト');
+  });
+
+  it('URL変更が索引へ反映される', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.updateNode('10', { url: 'https://renamed.example.com' });
+    const results = engine.search({ keywords: [] });
+    expect(results.find(r => r.node.id === '10')?.node.url).toBe('https://renamed.example.com');
+  });
+
+  it('URL変更で別名は引き継がれない(URLハッシュ紐付けのため)', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.updateNode('10', { url: 'https://renamed.example.com' });
+    const results = engine.search({ keywords: [] });
+    expect(results.find(r => r.node.id === '10')?.aliases).toEqual([]);
+  });
+
+  it('存在しないIDを指定しても索引を壊さず既存エントリは無傷', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.updateNode('does-not-exist', { title: 'x' });
+    expect(engine.search({ keywords: ['github'] }).map(r => r.node.id)).toEqual(['10']);
+  });
+});
+
+describe('SearchEngine — removeNode(削除の索引即時反映・U10)', () => {
+  it('対象が検索結果・ブラウズ結果の両方から消える', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.removeNode('10');
+    expect(engine.search({ keywords: ['github'] })).toEqual([]);
+    expect(engine.search({ keywords: [] }).some(r => r.node.id === '10')).toBe(false);
+  });
+
+  it('存在しないIDを指定しても索引が変化しない', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    const before = engine.search({ keywords: [] }).length;
+    engine.removeNode('does-not-exist');
+    expect(engine.search({ keywords: [] })).toHaveLength(before);
+  });
+});
+
+describe('SearchEngine — addNode(削除アンドゥ・現在ページ登録の索引即時反映・U10)', () => {
+  it('追加したエントリが検索・ブラウズ結果に現れ、別名でもヒットする', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    const node: BookmarkNode = { id: '99', parentId: '1', title: 'New Bookmark', url: 'https://new.example.com' };
+
+    engine.addNode(node, ['ブックマーク バー'], ['しんき']);
+
+    const browse = engine.search({ keywords: [] });
+    expect(browse.some(r => r.node.id === '99')).toBe(true);
+
+    const byAlias = engine.search({ keywords: ['しんき'] });
+    expect(byAlias.map(r => r.node.id)).toEqual(['99']);
+    expect(byAlias[0].matchedAliases).toEqual(['しんき']);
+  });
+});
