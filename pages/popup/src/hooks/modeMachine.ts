@@ -1,29 +1,53 @@
 /**
- * Popup のモード状態機械（U8・純粋ロジック）。
+ * Popup のモード状態機械（U8・純粋ロジック。U8a でフォーカス3状態を追加）。
  *
- * functional-design「画面遷移図(Popupのモード状態遷移)」「モード別のキー挙動」「共通ルール（検索ファースト）」を
- * 単一の source of truth として実装する。React / `chrome.*` に非依存の純粋関数群であり、`useMode`（React 層）と
- * ユニットテスト（`modeMachine.test.ts`）から利用する。既存の pure module（`folderTreeModel.ts`/`virtualization.ts`）に
- * 倣い、宣言は非 export とし、ファイル末尾で export をまとめる。
+ * functional-design「画面遷移図(Popupのモード状態遷移)」「既定モードのキー挙動（フォーカス位置別）」
+ * 「Escape の段階戻り（4段階）」「共通ルール（検索ファースト）」を単一の source of truth として実装する。
+ * React / `chrome.*` に非依存の純粋関数群であり、`useMode`（React 層）とユニットテスト（`modeMachine.test.ts`）
+ * から利用する。既存の pure module（`folderTreeModel.ts`/`virtualization.ts`）に倣い、宣言は非 export とし、
+ * ファイル末尾で export をまとめる。
  *
  * キー割り当ての出典整合: モード入口は functional-design の修飾キー方式（F2/Ctrl+E・Ctrl+;・Ctrl+M）を採用する。
  * design README の素キー `E`/`A` は検索ファースト（文字を打つと検索ボックスに戻る）と衝突するため非採用。
  * 各モードの UI 実体は後続単位（U9 別名/U10 インライン/U12 パネル・D&D/U13 複数選択）が担い、本モジュールは
  * モードの遷移とキー意味論（インテント）のみを提供する。
+ *
+ * U8a（フォーカス3状態）: Popup のキーボードフォーカスは検索ボックス/右ペイン/左ペインの3箇所を行き来する。
+ * `LIST` モード内のフォーカス位置は `ListFocus` で表し、`FOLDER_TREE` モードは左ペインを表す。統合的な
+ * フォーカス位置は `FocusArea` として `toFocusArea(mode, listFocus)` で導出する（二重管理を避けるため独立した
+ * state として持たない）。左ペイン内の実ナビゲーション（どのフォルダにフォーカスが当たるか・スコープ追従・
+ * 展開/折りたたみの実行）は U11 が担い、本単位はインテントの定義までに留める。
  */
 
-/** Popup のモード。既定は `LIST`。 */
-type Mode = 'LIST' | 'INLINE_EDIT' | 'ALIAS_EDIT' | 'DRAG' | 'PANEL';
+/** Popup のモード。既定は `LIST`。`FOLDER_TREE` は左ペイン操作中（U8a で追加）。 */
+type Mode = 'LIST' | 'FOLDER_TREE' | 'INLINE_EDIT' | 'ALIAS_EDIT' | 'DRAG' | 'PANEL';
+
+/**
+ * `LIST` モード内のフォーカス位置（U8a）。`FOLDER_TREE` では左ペインが自明のため参照しない。
+ * DOM フォーカスの実体（`<input>` の focus/blur）は Popup が保持し、本値は意味論のみを表す。
+ */
+type ListFocus = 'search' | 'result';
+
+/**
+ * キー意味論・Escape 段階戻りが参照する統合フォーカス位置（U8a）。
+ * `mode` と `listFocus` の2箇所が食い違わないよう、独立した state として持たず必ず導出する。
+ */
+type FocusArea = 'search' | 'result' | 'folderTree';
+
+/** `mode` と `listFocus` から統合フォーカス位置を導出する（U8a）。 */
+const toFocusArea = (mode: Mode, listFocus: ListFocus): FocusArea =>
+  mode === 'FOLDER_TREE' ? 'folderTree' : listFocus;
 
 interface ModeState {
   mode: Mode;
-  /** 編集/操作対象の行 ID（LIST/DRAG では null 可）。どの行を操作中かを後続単位へ伝える。 */
+  /** 編集/操作対象の行 ID（LIST/FOLDER_TREE/DRAG では null 可）。どの行を操作中かを後続単位へ伝える。 */
   targetId: string | null;
 }
 
 const initialModeState: ModeState = { mode: 'LIST', targetId: null };
 
 type ModeAction =
+  | { type: 'ENTER_FOLDER_TREE' }
   | { type: 'ENTER_INLINE_EDIT'; targetId: string }
   | { type: 'ENTER_ALIAS_EDIT'; targetId: string }
   | { type: 'ENTER_PANEL' }
@@ -32,11 +56,13 @@ type ModeAction =
 
 /**
  * モード遷移リデューサ。functional-design 遷移図に従い、LIST↔各モードのみを許可する。
- * 編集/別名モードへの入口は LIST からのみ有効。不正な遷移（例: INLINE_EDIT 中に別モードへ直接遷移）は
- * 現状維持に倒す（防御的デフォルト）。DRAG は LIST からのみ開始できる。
+ * 編集/別名/フォルダツリーモードへの入口は LIST からのみ有効。不正な遷移（例: INLINE_EDIT 中に
+ * 別モードへ直接遷移）は現状維持に倒す（防御的デフォルト）。DRAG は LIST からのみ開始できる。
  */
 const modeReducer = (state: ModeState, action: ModeAction): ModeState => {
   switch (action.type) {
+    case 'ENTER_FOLDER_TREE':
+      return state.mode === 'LIST' ? { mode: 'FOLDER_TREE', targetId: null } : state;
     case 'ENTER_INLINE_EDIT':
       return state.mode === 'LIST' ? { mode: 'INLINE_EDIT', targetId: action.targetId } : state;
     case 'ENTER_ALIAS_EDIT':
@@ -54,14 +80,29 @@ const modeReducer = (state: ModeState, action: ModeAction): ModeState => {
 
 /**
  * モードごとのキー意味論。UI はこの結果（インテント）を実行するだけにし、キー衝突ロジックを再発明しない。
- * `list:escape` は「段階的な戻り」の起点で、実際の1手は `resolveListEscape` が文脈から決める。
+ * `escape:step-back` は「段階的な戻り」の起点で、実際の1手は `resolveEscapeStep` が文脈から決める
+ * （LIST と FOLDER_TREE が同じ段階戻りの梯子を共有するため `list:` 接頭辞を外した名称にしている）。
  */
 type KeyIntent =
   | 'none'
+  // LIST + 検索ボックス（U8a）。↑↓ は検索欄を離脱しつつ選択行を1つ動かす。
+  | 'list:leave-search-up'
+  | 'list:leave-search-down'
+  // LIST + 右ペイン（U8a）。
   | 'list:move-up'
   | 'list:move-down'
+  | 'list:to-folder-tree'
+  // LIST 共通。
   | 'list:open'
-  | 'list:escape'
+  // FOLDER_TREE（U8a）。実行結線は U11（本単位は定義のみ）。
+  | 'folder:move-up'
+  | 'folder:move-down'
+  | 'folder:parent'
+  | 'folder:to-result'
+  | 'folder:toggle-expand'
+  | 'folder:home'
+  // LIST / FOLDER_TREE 共通の Escape 起点。
+  | 'escape:step-back'
   | 'inline:confirm'
   | 'inline:discard'
   | 'alias:candidate-up'
@@ -86,22 +127,45 @@ interface KeyLike {
 const hasCommandModifier = (e: KeyLike): boolean => Boolean(e.ctrlKey) || Boolean(e.metaKey);
 
 /**
- * 現在モードとキー入力からインテントを解決する（副作用なし）。
- * functional-design「モード別のキー挙動」表に忠実:
- * - LIST: 上下=選択移動 / Enter=開く / Escape=段階戻り（起点）
+ * 現在モード・キー入力・（LIST の場合の）フォーカス位置からインテントを解決する（副作用なし）。
+ * functional-design「既定モードのキー挙動（フォーカス位置別）」「編集モードのキー挙動」表に忠実:
+ * - LIST + 検索ボックス: ↑↓=検索欄を離脱しつつ選択行を1つ動かす / ←→・Home=none（ネイティブのキャレット移動・
+ *   クエリ途中の修正を温存するため、意図的に何も割り当てない）/ Enter=開く / Escape=段階戻り（起点）
+ * - LIST + 右ペイン: ↑↓=選択行の移動 / ←=左ペインへ / →=none / Enter=開く / Escape=段階戻り（起点）
+ * - FOLDER_TREE: ↑↓=フォルダ間移動 / ←=親フォルダへ / →=右ペインへ / Enter=展開トグル / Home=「すべて」へ /
+ *   Escape=段階戻り（起点）。実行結線は U11（本単位はインテントの定義のみ）
  * - INLINE_EDIT: Enter=確定 / Escape=破棄 / 上下=ネイティブのキャレット移動（none）
  * - ALIAS_EDIT: 上下=候補移動 / Enter=チップ確定 / Escape=編集終了
  * - PANEL: 上下=候補移動 / Enter=決定 / Escape=閉じる
  * - DRAG: Escape=中止のみ（上下/Enter は無効）
  */
-const resolveKeyIntent = (mode: Mode, e: KeyLike): KeyIntent => {
+const resolveKeyIntent = (mode: Mode, e: KeyLike, listFocus: ListFocus): KeyIntent => {
   switch (mode) {
     case 'LIST':
+      if (listFocus === 'search') {
+        // ←→・Home は意図的に none（キャレット移動・クエリ途中の修正を奪わない）。
+        if (e.key === 'ArrowDown') return 'list:leave-search-down';
+        if (e.key === 'ArrowUp') return 'list:leave-search-up';
+        if (e.key === 'Enter') return hasCommandModifier(e) ? 'none' : 'list:open';
+        if (e.key === 'Escape') return 'escape:step-back';
+        return 'none';
+      }
+      // listFocus === 'result'
       if (e.key === 'ArrowDown') return 'list:move-down';
       if (e.key === 'ArrowUp') return 'list:move-up';
+      if (e.key === 'ArrowLeft') return 'list:to-folder-tree';
       // 修飾なし Enter のみ「開く」。Ctrl/Cmd+Enter（新規タブ）は将来単位のため none に倒す。
       if (e.key === 'Enter') return hasCommandModifier(e) ? 'none' : 'list:open';
-      if (e.key === 'Escape') return 'list:escape';
+      if (e.key === 'Escape') return 'escape:step-back';
+      return 'none';
+    case 'FOLDER_TREE':
+      if (e.key === 'ArrowDown') return 'folder:move-down';
+      if (e.key === 'ArrowUp') return 'folder:move-up';
+      if (e.key === 'ArrowLeft') return 'folder:parent';
+      if (e.key === 'ArrowRight') return 'folder:to-result';
+      if (e.key === 'Enter') return 'folder:toggle-expand';
+      if (e.key === 'Home') return 'folder:home';
+      if (e.key === 'Escape') return 'escape:step-back';
       return 'none';
     case 'INLINE_EDIT':
       if (e.key === 'Enter') return 'inline:confirm';
@@ -126,21 +190,25 @@ const resolveKeyIntent = (mode: Mode, e: KeyLike): KeyIntent => {
   }
 };
 
-/** LIST の Escape 段階戻りの文脈。 */
-interface ListEscapeContext {
+/** Escape 段階戻りの文脈（U8a でフォーカス位置を追加し4段階化）。 */
+interface EscapeContext {
+  /** 現在の統合フォーカス位置（`toFocusArea` の結果）。 */
+  focusArea: FocusArea;
   /** 検索キーワードが入力されているか。 */
   hasQuery: boolean;
   /** フォルダ絞り込み（スコープ）が有効か。 */
   hasScope: boolean;
 }
 
-type ListEscapeAction = 'clear-keyword' | 'clear-scope' | 'close';
+type EscapeStep = 'focus-search' | 'clear-keyword' | 'clear-scope' | 'close';
 
 /**
- * LIST の Escape を1段階ずつ解決する（functional-design LIST 行「段階的に戻る」）。
- * 優先順位: キーワードクリア → フォルダ絞り込み解除 → 閉じる。
+ * Escape を1段階ずつ解決する（functional-design「Escape の段階戻り（4段階）」）。
+ * 優先順位: 検索ボックス以外にフォーカス → 検索ボックスへ戻す → キーワードクリア →
+ * フォルダ絞り込み解除 → 閉じる。LIST/FOLDER_TREE のどちらからも同じ梯子を辿る。
  */
-const resolveListEscape = (ctx: ListEscapeContext): ListEscapeAction => {
+const resolveEscapeStep = (ctx: EscapeContext): EscapeStep => {
+  if (ctx.focusArea !== 'search') return 'focus-search';
   if (ctx.hasQuery) return 'clear-keyword';
   if (ctx.hasScope) return 'clear-scope';
   return 'close';
@@ -164,9 +232,25 @@ const isPrintableKey = (e: PrintableKeyLike): boolean => {
 };
 
 /**
+ * 検索ファースト復帰のトリガーとなるキー判定（U8a）。印字文字（`isPrintableKey`）に加え、修飾なしの
+ * `Backspace` も検索ボックスへの復帰トリガーとする。左/右ペインで「消したい」と思って Backspace を押した
+ * ときにも検索ボックスへ戻れるようにするため（printable と同じ「フォーカス移動後に発火した既定動作が
+ * 新しくフォーカスされた input に対して適用される」ブラウザの挙動に乗せ、`query` を明示的に書き換えない）。
+ */
+const isSearchFirstTriggerKey = (e: PrintableKeyLike): boolean => {
+  if (isPrintableKey(e)) return true;
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  if (e.isComposing) return false;
+  return e.key === 'Backspace';
+};
+
+/**
  * 検索ファースト復帰の対象外モード判定（functional-design「共通ルール: 編集モード中を除き…」）。
  * 自前の文字入力 UI を持つモード（インライン編集・別名編集・フォルダ選択パネル）では、印字文字を検索ボックスへ
  * 奪わない。これを純粋関数に集約することで、後続単位（U12 PANEL 等）は Popup 側のハードコード判定を編集せずに済む。
+ *
+ * `FOLDER_TREE` は意図的に対象外にしない（＝検索ファースト対象）。左ペインで文字を打つと検索ボックスへ復帰する
+ * （U8a・functional-design「共通ルール」でフォーカス3状態全体に適用される）。
  */
 const isSearchFirstExempt = (mode: Mode): boolean =>
   mode === 'INLINE_EDIT' || mode === 'ALIAS_EDIT' || mode === 'PANEL';
@@ -203,21 +287,25 @@ const resolveShortcutIntent = (e: KeyLike): ShortcutIntent | null => {
 export {
   initialModeState,
   modeReducer,
+  toFocusArea,
   resolveKeyIntent,
-  resolveListEscape,
+  resolveEscapeStep,
   isPrintableKey,
+  isSearchFirstTriggerKey,
   isSearchFirstExempt,
   SHORTCUTS,
   resolveShortcutIntent,
 };
 export type {
   Mode,
+  ListFocus,
+  FocusArea,
   ModeState,
   ModeAction,
   KeyIntent,
   KeyLike,
-  ListEscapeContext,
-  ListEscapeAction,
+  EscapeContext,
+  EscapeStep,
   PrintableKeyLike,
   ShortcutIntent,
 };
