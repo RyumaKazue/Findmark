@@ -34,8 +34,10 @@ export interface UseModeApi {
  * 現在モードに束ねたキー解決を公開するだけの薄い層にする。後続単位（U9/U10/U11/U12/U13）は enter 系 / exitToList で
  * モードに出入りし、`resolveKey` の返すインテントに応答する。
  */
-export const useMode = (): UseModeApi => {
-  const [state, dispatch] = useReducer(modeReducer, initialModeState);
+export const useMode = (initialMode: Mode = 'LIST'): UseModeApi => {
+  // 初期モードを差し替え可能にする（U11: 起動時の既定フォーカスを左ペイン = 'FOLDER_TREE' にする）。
+  // 遷移規則自体は `modeMachine` の `modeReducer` を変更しない（初期 state のみ上書き）。
+  const [state, dispatch] = useReducer(modeReducer, { ...initialModeState, mode: initialMode });
 
   const enterFolderTree = useCallback(() => dispatch({ type: 'ENTER_FOLDER_TREE' }), []);
   const enterInlineEdit = useCallback((targetId: string) => dispatch({ type: 'ENTER_INLINE_EDIT', targetId }), []);

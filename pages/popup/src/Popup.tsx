@@ -2,8 +2,10 @@ import '@src/Popup.css';
 import { withErrorBoundary } from '@extension/shared';
 import { ErrorDisplay, cn } from '@extension/ui';
 import { FolderTree } from '@src/components/FolderTree';
+import { compressPath, findFolderPath } from '@src/components/folderTreeModel';
 import { PopupShell } from '@src/components/PopupShell';
 import { ResultList } from '@src/components/ResultList';
+import { buildResultMetaLabel } from '@src/components/resultMetaModel';
 import { SearchHeader } from '@src/components/SearchHeader';
 import { Toast } from '@src/components/Toast';
 import {
@@ -18,7 +20,9 @@ import { useRowActions } from '@src/hooks/useRowActions';
 import { useSearch } from '@src/hooks/useSearch';
 import { useUndo } from '@src/hooks/useUndo';
 import { aliasStore, bookmarkService } from '@src/services';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FolderTreeActions } from '@src/components/FolderTree';
+import type { FolderTreeNode } from '@src/components/folderTreeModel';
 import type { CommitPlan } from '@src/components/inlineEditModel';
 import type { ListFocus } from '@src/hooks/modeMachine';
 
@@ -31,21 +35,26 @@ import type { ListFocus } from '@src/hooks/modeMachine';
  * レベルの単一リスナーでそのインテントを実行する（フォーカスが左ペインのフォルダボタン等に移っていてもキー操作が
  * 一貫して効くようにするため）。編集/別名/パネル/ドラッグの各モードは UI 実体を持つ後続単位（U9/U10/U12/U13）が
  * `useMode` の遷移 API で接続する。左ペイン内の実ナビゲーション（フォルダ間移動・スコープ追従・展開トグル）は
- * U11 が結線する（本単位はインテントの定義とペイン間移動のみ）。
+ * U11 が `folderTreeActionsRef`（命令ハンドル）経由で結線する。
  *
- * 初期フォーカス: PRD では起動時の既定は左ペインだが、左ペインがキー操作可能になるのは U11 のため、
- * 本単位では暫定的に `listFocus='search'` を初期値とする（`↑↓` が無反応なペインへ着地させないため）。
- * U11 が既定値の切り替えを、U19 が保存状態からの復元を担う。
+ * 初期フォーカス（U11）: 起動時の既定フォーカスは**左ペイン**（`useMode('FOLDER_TREE')`）。左ペインが
+ * キーボード操作可能になったため、U7 の「検索ボックスへ自動フォーカス」は廃止する。保存状態からの復元は U19。
  */
 const Popup = () => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  // 左ペインで選択中のフォルダ（null = すべて）。直下のみに絞り込む（U6a）。
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  // LIST モード内のフォーカス位置（検索ボックス/右ペイン）。暫定初期値は 'search'（上記 JSDoc 参照）。
+  // 左ペインのスコープ（null = すべて）。左ペインのフォーカス行でもあり、直下のみに絞り込む（U6a/U11）。
+  const [scopeFolderId, setScopeFolderId] = useState<string | null>(null);
+  // フォルダツリー（チップ/メタ行のパス解決に使う）。FolderTree が取得して渡す。
+  const [folders, setFolders] = useState<FolderTreeNode[]>([]);
+  // LIST モード内のフォーカス位置（検索ボックス/右ペイン）。既定フォーカスは左ペイン（FOLDER_TREE）のため、
+  // LIST に入った初回は 'search' から始める。
   const [listFocus, setListFocus] = useState<ListFocus>('search');
-  const { results, isIndexReady, updateAliases, refresh } = useSearch(query, selectedFolderId);
-  const mode = useMode();
+  // 左ペインのキーボードインテント実行体（FolderTree が公開）。
+  const folderTreeActionsRef = useRef<FolderTreeActions | null>(null);
+  const { results, isIndexReady, updateAliases, refresh } = useSearch(query, scopeFolderId);
+  // U11: 起動時の既定フォーカスを左ペインにする。
+  const mode = useMode('FOLDER_TREE');
   const undo = useUndo();
   const rowActions = useRowActions(refresh, undo.register);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +70,7 @@ const Popup = () => {
   // クエリ or フォルダ選択が変わったら選択行を先頭へ戻す（docs/design: 絞り込み変更で focusedIndex=0）。
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query, selectedFolderId]);
+  }, [query, scopeFolderId]);
 
   // 結果件数が変わったら選択インデックスを範囲内へクランプする。
   useEffect(() => {
@@ -200,18 +209,18 @@ const Popup = () => {
     const step = resolveEscapeStep({
       focusArea: currentFocusArea,
       hasQuery: query.trim().length > 0,
-      hasScope: selectedFolderId !== null,
+      hasScope: scopeFolderId !== null,
     });
     if (step === 'focus-search') {
       focusSearch();
     } else if (step === 'clear-keyword') {
       setQuery('');
     } else if (step === 'clear-scope') {
-      setSelectedFolderId(null);
+      setScopeFolderId(null);
     } else {
       window.close();
     }
-  }, [currentFocusArea, query, selectedFolderId, focusSearch]);
+  }, [currentFocusArea, query, scopeFolderId, focusSearch]);
 
   // モード状態機械に基づくキー操作を document レベルで一元処理する。
   // 検索ボックス外（左ペインのフォルダボタン等）にフォーカスがあっても LIST/FOLDER_TREE のキー操作が一貫して効く。
@@ -307,11 +316,24 @@ const Popup = () => {
             handleEscapeStep();
             return;
           case 'folder:move-up':
+            e.preventDefault();
+            folderTreeActionsRef.current?.moveFocus(-1);
+            return;
           case 'folder:move-down':
+            e.preventDefault();
+            folderTreeActionsRef.current?.moveFocus(1);
+            return;
           case 'folder:parent':
+            e.preventDefault();
+            folderTreeActionsRef.current?.focusParent();
+            return;
           case 'folder:toggle-expand':
+            e.preventDefault();
+            folderTreeActionsRef.current?.toggleExpand();
+            return;
           case 'folder:home':
-            // 左ペイン内の実ナビゲーションは U11 が結線する（本単位はインテントの定義のみ）。
+            e.preventDefault();
+            folderTreeActionsRef.current?.focusAll();
             return;
           default:
             break;
@@ -362,41 +384,74 @@ const Popup = () => {
   // INLINE_EDIT 中はヘッダーと左ペインを dimmed にする（デザイン状態1d。docs/design「他要素: opacity 0.45」）。
   const dimHeaderAndSidebar = mode.mode === 'INLINE_EDIT';
 
+  // スコープの可視化用パス（圧縮済み・配列で保持し表示時のみ結合 = AC-6/AC-7）。フォルダ未解決時は null に倒す。
+  const scopePath = useMemo(() => {
+    if (scopeFolderId === null) {
+      return null;
+    }
+    const path = findFolderPath(folders, scopeFolderId);
+    return path.length > 0 ? compressPath(path) : null;
+  }, [folders, scopeFolderId]);
+
+  // 右ペインのメタ行文言（U11。クエリなし & スコープ「すべて」では null = メタ行なし）。
+  const metaLabel = buildResultMetaLabel({ scopePath, query: query.trim(), count: results.length });
+
   return (
     <div className="relative">
       <PopupShell
         header={
           <div className={dimHeaderAndSidebar ? 'opacity-45' : undefined}>
-            <SearchHeader query={query} onQueryChange={setQuery} inputRef={searchInputRef} />
+            <SearchHeader query={query} onQueryChange={setQuery} inputRef={searchInputRef} scopePath={scopePath} />
           </div>
         }
         sidebar={
-          <div
-            className={cn(
-              'h-full',
-              mode.mode === 'FOLDER_TREE' && 'shadow-focus-ring rounded-md',
-              dimHeaderAndSidebar && 'opacity-45',
-            )}>
-            <FolderTree selectedFolderId={selectedFolderId} onSelectFolder={setSelectedFolderId} />
+          // アクティブペイン枠（AC-14）: ペインの最外周に重ねる「一番外側の枠」。選択行・スコープ塗りが
+          // 枠の外へはみ出さないよう inset-0（端ぴったり）に置き、下角のみポップアップの角丸（xl）に合わせて
+          // クリップを回避する。pointer-events-none でクリックも妨げない。
+          <div className={cn('relative h-full', dimHeaderAndSidebar && 'opacity-45')}>
+            <FolderTree
+              scopeFolderId={scopeFolderId}
+              onScopeChange={setScopeFolderId}
+              focused={mode.mode === 'FOLDER_TREE'}
+              onActivate={enterFolderTree}
+              onFoldersLoaded={setFolders}
+              actionsRef={folderTreeActionsRef}
+            />
+            {currentFocusArea === 'folderTree' && (
+              <div
+                aria-hidden="true"
+                className="border-accent pointer-events-none absolute inset-0 rounded-bl-xl border-2"
+              />
+            )}
           </div>
         }
         main={
-          <ResultList
-            results={results}
-            selectedIndex={selectedIndex}
-            emptyLabel={isIndexReady ? '一致するブックマークがありません' : '読み込み中…'}
-            editingAliasId={editingAliasId}
-            editingInlineId={editingInlineId}
-            onOpen={openAt}
-            onHover={setSelectedIndex}
-            onEnterAliasEdit={enterAliasEditAt}
-            onCommitAliases={commitAliases}
-            onCloseAliasEdit={closeAliasEdit}
-            onEnterInlineEdit={enterInlineEditAt}
-            onCommitEdit={handleCommitEdit}
-            onCancelEdit={handleCancelEdit}
-            onDeleteRow={handleDeleteAt}
-          />
+          <div className="relative h-full">
+            <ResultList
+              results={results}
+              selectedIndex={selectedIndex}
+              emptyLabel={isIndexReady ? '一致するブックマークがありません' : '読み込み中…'}
+              metaLabel={metaLabel}
+              resultFocused={currentFocusArea === 'result'}
+              editingAliasId={editingAliasId}
+              editingInlineId={editingInlineId}
+              onOpen={openAt}
+              onHover={setSelectedIndex}
+              onEnterAliasEdit={enterAliasEditAt}
+              onCommitAliases={commitAliases}
+              onCloseAliasEdit={closeAliasEdit}
+              onEnterInlineEdit={enterInlineEditAt}
+              onCommitEdit={handleCommitEdit}
+              onCancelEdit={handleCancelEdit}
+              onDeleteRow={handleDeleteAt}
+            />
+            {currentFocusArea === 'result' && (
+              <div
+                aria-hidden="true"
+                className="border-accent pointer-events-none absolute inset-0 rounded-br-xl border-2"
+              />
+            )}
+          </div>
         }
       />
       {undo.pending ? (

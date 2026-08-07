@@ -1,5 +1,5 @@
 import { SearchEngine, UndoManager, normalizer } from '@extension/shared';
-import { AliasStore, bookmarkService } from '@extension/storage';
+import { AliasStore, bookmarkService, localStateStore } from '@extension/storage';
 
 /**
  * ドメイン/データレイヤーの結線モジュール（U7・U10 で undoManager を追加）。
@@ -12,4 +12,4 @@ import { AliasStore, bookmarkService } from '@extension/storage';
 export const searchEngine = new SearchEngine(normalizer);
 export const aliasStore = new AliasStore(normalizer);
 export const undoManager = new UndoManager();
-export { bookmarkService };
+export { bookmarkService, localStateStore };
