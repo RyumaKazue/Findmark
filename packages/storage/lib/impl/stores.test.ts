@@ -37,6 +37,8 @@ describe('localStateStore', () => {
     expect(typeof localStateStore.set).toBe('function');
     expect(typeof localStateStore.setLastUsedFolder).toBe('function');
     expect(typeof localStateStore.toggleExpanded).toBe('function');
+    expect(typeof localStateStore.expandFolders).toBe('function');
+    expect(typeof localStateStore.initializeExpanded).toBe('function');
   });
 
   it('toggleExpanded が展開状態を追加/削除する', async () => {
@@ -51,5 +53,39 @@ describe('localStateStore', () => {
     await localStateStore.set({ expandedFolderIds: [] });
     await localStateStore.setLastUsedFolder('folder-9');
     expect(localStateStore.getSnapshot()?.lastUsedFolderId).toBe('folder-9');
+  });
+
+  it('toggleExpanded が初期化済みフラグを立てる', async () => {
+    await localStateStore.set({ expandedFolderIds: [] });
+    await localStateStore.toggleExpanded('f1');
+    expect(localStateStore.getSnapshot()?.isExpandedInitialized).toBe(true);
+  });
+
+  it('expandFolders が既存を保ちつつ ID 群を追加する（重複しない）', async () => {
+    await localStateStore.set({ expandedFolderIds: ['a'] });
+    await localStateStore.expandFolders(['a', 'b', 'c']);
+    expect(localStateStore.getSnapshot()?.expandedFolderIds).toEqual(['a', 'b', 'c']);
+  });
+
+  it('expandFolders は空配列で何もしない', async () => {
+    await localStateStore.set({ expandedFolderIds: ['a'] });
+    await localStateStore.expandFolders([]);
+    expect(localStateStore.getSnapshot()?.expandedFolderIds).toEqual(['a']);
+  });
+
+  it('initializeExpanded は初回のみ既定展開を書き込む', async () => {
+    await localStateStore.set({ expandedFolderIds: [] });
+    await localStateStore.initializeExpanded(['root-1', 'root-2']);
+    expect(localStateStore.getSnapshot()?.expandedFolderIds).toEqual(['root-1', 'root-2']);
+    expect(localStateStore.getSnapshot()?.isExpandedInitialized).toBe(true);
+  });
+
+  it('initializeExpanded は2回目以降は何もしない（全て畳んだ状態を保持）', async () => {
+    await localStateStore.set({ expandedFolderIds: [] });
+    await localStateStore.initializeExpanded(['root-1']);
+    // ユーザーが全て畳む
+    await localStateStore.set({ expandedFolderIds: [], isExpandedInitialized: true });
+    await localStateStore.initializeExpanded(['root-1']);
+    expect(localStateStore.getSnapshot()?.expandedFolderIds).toEqual([]);
   });
 });

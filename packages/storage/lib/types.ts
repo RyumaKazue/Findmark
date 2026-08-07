@@ -89,6 +89,12 @@ export interface UserSettings {
 export interface LocalState {
   /** フォルダツリーの展開状態（フォルダ ID の配列）。 */
   expandedFolderIds: string[];
+  /**
+   * 展開状態の初期化済みフラグ（U11）。
+   * 空配列だけでは「初回起動（既定で最上位を展開したい）」と「ユーザーが全て畳んだ」を区別できないため、
+   * 初回に既定展開を書き込んだことを別に記録する。
+   */
+  isExpandedInitialized?: boolean;
   /** 現在ページ登録時の初期フォルダ（前回使用フォルダ）。 */
   lastUsedFolderId?: string;
 }

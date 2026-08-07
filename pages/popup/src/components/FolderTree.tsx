@@ -1,46 +1,143 @@
-import { FolderSelectChip, FolderTreeItem } from './FolderTreeItem.js';
-import { buildFolderTree } from './folderTreeModel.js';
-import { bookmarkService } from '../services.js';
-import { useEffect, useState } from 'react';
-import type { FolderTreeNode } from './folderTreeModel.js';
+import { FolderTreeItem } from './FolderTreeItem.js';
+import {
+  buildFolderTree,
+  collectAncestorIds,
+  findParentId,
+  flattenVisibleTree,
+  moveRow,
+  rowKey,
+} from './folderTreeModel.js';
+import { bookmarkService, localStateStore } from '../services.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FolderTreeNode, TreeRow } from './folderTreeModel.js';
+import type { RefObject } from 'react';
 
-interface FolderTreeProps {
-  /** 選択中フォルダ（null = すべて）。 */
-  selectedFolderId: string | null;
-  /** フォルダ選択の切り替え（null = すべてに戻す）。 */
-  onSelectFolder: (id: string | null) => void;
+/** Popup の document リスナーから呼ばれる左ペイン操作（U8a の `folder:*` インテントの実行体）。 */
+interface FolderTreeActions {
+  /** `folder:move-up` / `folder:move-down`。可視行を1つ移動しスコープを追従させる。 */
+  moveFocus: (delta: -1 | 1) => void;
+  /** `folder:parent`。親フォルダへ移動（最上位・「すべて」では何もしない）。 */
+  focusParent: () => void;
+  /** `folder:toggle-expand`。フォルダの展開トグル（「さらに N 件…」行では残りを表示）。 */
+  toggleExpand: () => void;
+  /** `folder:home`。スコープを「すべて」へ一発で戻す。 */
+  focusAll: () => void;
 }
 
+interface FolderTreeProps {
+  /** 現在のスコープ（null = すべて）。左ペインのフォーカス行でもある。 */
+  scopeFolderId: string | null;
+  /** スコープ変更（キーボード移動・フォルダ名クリックの両方から呼ばれる）。 */
+  onScopeChange: (id: string | null) => void;
+  /** 左ペインがフォーカスされているか（mode === 'FOLDER_TREE'）。 */
+  focused: boolean;
+  /** ツリー内をクリックした際に左ペイン（FOLDER_TREE）へ入る（mode 遷移は Popup が担う）。 */
+  onActivate: () => void;
+  /** 取得したフォルダツリーを親へ渡す（チップ/メタ行のパス解決に使う）。 */
+  onFoldersLoaded: (folders: FolderTreeNode[]) => void;
+  /** キーボードインテントを受け取るための命令ハンドル。 */
+  actionsRef: RefObject<FolderTreeActions | null>;
+}
+
+/** `folders` から ID でノードを引く（純粋・小さいため FolderTree ローカルに閉じる）。 */
+const findNode = (nodes: FolderTreeNode[], id: string): FolderTreeNode | null => {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return node;
+    }
+    const found = findNode(node.children, id);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+};
+
 /**
- * 左ペイン（220px）のフォルダツリー。ツリー表示・開閉のローカル切替に加え、フォルダ選択（📎クリップ）で
- * 選択したフォルダ配下（サブフォルダ含む）へ右ペインを絞り込む（U7）。深い階層で名前が見切れる場合は
- * 横スクロール（スライド）で全表示でき、📎ボタンは右端に固定する。
- * 検索ボックスへのフォルダチップ挿入・直下トグル・ツリー⇄チップ同期・展開永続・多階層省略は U11。
+ * 左ペイン（220px）のフォルダツリー（U11）。キーボード操作可能なスコープ選択面。
+ *
+ * 状態は「スコープ = フォーカス行」に畳んで二重管理を消す（scopeFolderId は Popup が保持）。展開状態は
+ * `localStateStore` に永続化し、「さらに N 件…」の残り表示（revealedIds）はポップアップを開くたびリセットする。
+ * キー処理は Popup の単一 document リスナーが担い、実行だけを `actionsRef`（命令ハンドル）で受ける。
+ * マウスクリックとキーボードは同じ `scopeFolderId` を更新し、クリック後はツリールートへ DOM フォーカスを戻す
+ * ことで内部モデルと実 DOM フォーカスを常に一致させる（AC-8）。
  */
-export const FolderTree = ({ selectedFolderId, onSelectFolder }: FolderTreeProps) => {
+export const FolderTree = ({
+  scopeFolderId,
+  onScopeChange,
+  focused,
+  onActivate,
+  onFoldersLoaded,
+  actionsRef,
+}: FolderTreeProps) => {
   const [folders, setFolders] = useState<FolderTreeNode[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // 「さらに N 件…」で残りを表示した親フォルダ ID（非永続。開くたびリセット）。
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  // 「さらに N 件…」行にフォーカスがあるときのみ非 null（スコープと一致しない唯一の例外）。
+  const [focusedMoreParentId, setFocusedMoreParentId] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+  // 行キー → ref コールバックのキャッシュ（identity を安定させ ref の不要な着脱を避ける）。
+  const refCallbackCache = useRef<Map<string, (el: HTMLElement | null) => void>>(new Map());
 
+  // 起動時: フォルダツリーと展開状態を並行取得。初回は最上位フォルダを既定展開にする。
   useEffect(() => {
     let active = true;
-    bookmarkService
-      .getTree()
-      .then(tree => {
+    Promise.all([bookmarkService.getTree(), localStateStore.get()])
+      .then(([tree, local]) => {
         if (!active) {
           return;
         }
         const built = buildFolderTree(tree);
         setFolders(built);
-        // 既定で最上位フォルダを展開する（表示のみ・非永続。永続は U11）。
-        setExpandedIds(new Set(built.map(f => f.id)));
+        onFoldersLoaded(built);
+        if (local.isExpandedInitialized) {
+          setExpandedIds(new Set(local.expandedFolderIds));
+        } else {
+          const topIds = built.map(f => f.id);
+          setExpandedIds(new Set(topIds));
+          void localStateStore.initializeExpanded(topIds);
+        }
       })
       .catch((e: unknown) => console.error('[FolderTree] フォルダツリーの取得に失敗しました:', e));
     return () => {
       active = false;
     };
-  }, []);
+  }, [onFoldersLoaded]);
 
-  const toggle = (id: string) =>
+  // スコープ変更時、その祖先フォルダ（自身は含まない）を自動展開し、スコープ中フォルダを可視にする（AC-1）。
+  useEffect(() => {
+    if (scopeFolderId === null || folders.length === 0) {
+      return;
+    }
+    const ancestors = collectAncestorIds(folders, scopeFolderId);
+    if (ancestors.length === 0) {
+      return;
+    }
+    setExpandedIds(prev => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ancestors) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    void localStateStore.expandFolders(ancestors);
+  }, [scopeFolderId, folders]);
+
+  // スコープが外部（Escape の段階戻り clear-scope・将来の状態復元 U19 等）から変更されたら、
+  // 「さらに N 件…」行への一時フォーカス（focusedMoreParentId）を持ち越さない。持ち越すと focusedKey が
+  // スコープと食い違ったまま固定化し、左ペインの ↑↓ 基準がズレる/無反応になる（AC-1/AC-2）。
+  // moveFocus が more 行へ移る際は scopeFolderId を変更しないため、この effect が誤って打ち消すことはない。
+  useEffect(() => {
+    setFocusedMoreParentId(null);
+  }, [scopeFolderId]);
+
+  const toggle = useCallback((id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -50,28 +147,155 @@ export const FolderTree = ({ selectedFolderId, onSelectFolder }: FolderTreeProps
       }
       return next;
     });
+    void localStateStore.toggleExpanded(id);
+  }, []);
+
+  const rows = useMemo(
+    () => flattenVisibleTree(folders, { expandedIds, revealedIds }),
+    [folders, expandedIds, revealedIds],
+  );
+
+  // フォーカス行キー: 「さらに N 件…」にいるときだけスコープと分岐する（design 4.2）。
+  const focusedKey = focusedMoreParentId ? `more:${focusedMoreParentId}` : scopeFolderId ? `f:${scopeFolderId}` : 'all';
+
+  // ── キーボードインテントの実行体（actionsRef 経由で Popup から呼ばれる） ──
+  const moveFocus = useCallback(
+    (delta: -1 | 1) => {
+      const next = moveRow(rows, focusedKey, delta);
+      if (!next) {
+        return;
+      }
+      if (next.kind === 'more') {
+        setFocusedMoreParentId(next.parentId); // スコープは動かさない
+        return;
+      }
+      setFocusedMoreParentId(null);
+      onScopeChange(next.kind === 'all' ? null : next.folder.id);
+    },
+    [rows, focusedKey, onScopeChange],
+  );
+
+  const focusParent = useCallback(() => {
+    // 「さらに N 件…」行からはその親フォルダへ戻す。
+    if (focusedMoreParentId) {
+      setFocusedMoreParentId(null);
+      onScopeChange(focusedMoreParentId);
+      return;
+    }
+    if (scopeFolderId === null) {
+      return; // 「すべて」では何もしない
+    }
+    const parent = findParentId(folders, scopeFolderId);
+    if (parent !== null) {
+      onScopeChange(parent); // 最上位フォルダ（parent=null）では何もしない
+    }
+  }, [focusedMoreParentId, scopeFolderId, folders, onScopeChange]);
+
+  const toggleExpandFocused = useCallback(() => {
+    // 「さらに N 件…」行では残りを表示する。
+    if (focusedMoreParentId) {
+      setRevealedIds(prev => new Set(prev).add(focusedMoreParentId));
+      return;
+    }
+    if (scopeFolderId === null) {
+      return; // 「すべて」行は展開対象なし
+    }
+    const node = findNode(folders, scopeFolderId);
+    if (node && node.children.length > 0) {
+      toggle(scopeFolderId);
+    }
+  }, [focusedMoreParentId, scopeFolderId, folders, toggle]);
+
+  const focusAll = useCallback(() => {
+    setFocusedMoreParentId(null);
+    onScopeChange(null);
+  }, [onScopeChange]);
+
+  // 命令ハンドルを毎レンダー最新の closure で公開する（useImperativeHandle 相当）。
+  useEffect(() => {
+    actionsRef.current = { moveFocus, focusParent, toggleExpand: toggleExpandFocused, focusAll };
+    return () => {
+      actionsRef.current = null;
+    };
+  }, [actionsRef, moveFocus, focusParent, toggleExpandFocused, focusAll]);
+
+  // 左ペインがフォーカスされたら実 DOM フォーカスをツリールートへ当てる（起動直後を含む）。
+  useEffect(() => {
+    if (focused) {
+      rootRef.current?.focus();
+    }
+  }, [focused]);
+
+  // フォーカス行が可視範囲外なら追従する。
+  useEffect(() => {
+    rowRefs.current.get(focusedKey)?.scrollIntoView({ block: 'nearest' });
+  }, [focusedKey, rows]);
+
+  // クリック共通処理: スコープ/展開/残り表示を更新し、DOM フォーカスをツリールートへ戻す（AC-8）。
+  const handleSelectScope = (id: string | null) => {
+    onActivate();
+    setFocusedMoreParentId(null);
+    onScopeChange(id);
+    rootRef.current?.focus();
+  };
+  const handleToggle = (id: string) => {
+    onActivate();
+    toggle(id);
+    rootRef.current?.focus();
+  };
+  const handleReveal = (parentId: string) => {
+    onActivate();
+    setRevealedIds(prev => new Set(prev).add(parentId));
+    setFocusedMoreParentId(parentId);
+    rootRef.current?.focus();
+  };
+
+  // 行キーごとに ref コールバックをキャッシュして identity を安定させる（毎レンダーの不要な着脱を避ける）。
+  const registerRef = useCallback((key: string) => {
+    const cache = refCallbackCache.current;
+    let cb = cache.get(key);
+    if (!cb) {
+      cb = (el: HTMLElement | null) => {
+        if (el) {
+          rowRefs.current.set(key, el);
+        } else {
+          rowRefs.current.delete(key);
+        }
+      };
+      cache.set(key, cb);
+    }
+    return cb;
+  }, []);
+
+  const scopeOf = (row: TreeRow): boolean =>
+    row.kind === 'all' ? scopeFolderId === null : row.kind === 'folder' ? row.folder.id === scopeFolderId : false;
 
   return (
     // 縦横スクロール。深い階層/長い名前はスライド（横スクロール）で全表示する。
-    <div className="h-full overflow-auto">
-      {/* 内容は最小でペイン幅、名前が長ければ max-content まで広げて横スクロールさせる。 */}
+    // tabIndex=-1 で実 DOM フォーカスを受け、キー処理は Popup の document リスナーが担う。
+    <div ref={rootRef} role="tree" aria-label="フォルダ" tabIndex={-1} className="h-full overflow-auto outline-none">
       <div className="flex w-max min-w-full flex-col gap-[1px] px-2 py-3">
-        <div className="text-ink flex h-9 items-center gap-[6px] rounded-md px-[10px] text-[14px] font-bold">
-          <span className="whitespace-nowrap">すべて</span>
-          <FolderSelectChip selected={selectedFolderId === null} onClick={() => onSelectFolder(null)} />
-        </div>
-        {folders.map(folder => (
-          <FolderTreeItem
-            key={folder.id}
-            folder={folder}
-            depth={0}
-            expandedIds={expandedIds}
-            onToggle={toggle}
-            selectedFolderId={selectedFolderId}
-            onSelectFolder={onSelectFolder}
-          />
-        ))}
+        {rows.map(row => {
+          const key = rowKey(row);
+          const folderId = row.kind === 'folder' ? row.folder.id : null;
+          return (
+            <FolderTreeItem
+              key={key}
+              row={row}
+              scoped={scopeOf(row)}
+              paneFocused={focused}
+              focused={key === focusedKey}
+              expanded={folderId !== null && expandedIds.has(folderId)}
+              onToggleExpand={() => folderId && handleToggle(folderId)}
+              onSelectScope={() => handleSelectScope(row.kind === 'folder' ? folderId : null)}
+              onRevealMore={() => row.kind === 'more' && handleReveal(row.parentId)}
+              registerRef={registerRef(key)}
+            />
+          );
+        })}
       </div>
     </div>
   );
 };
+
+export type { FolderTreeActions };

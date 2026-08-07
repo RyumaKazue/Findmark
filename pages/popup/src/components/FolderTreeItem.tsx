@@ -1,129 +1,168 @@
+import { TRUNCATE_DEPTH } from './folderTreeModel.js';
 import { cn } from '@extension/ui';
-import type { FolderTreeNode } from './folderTreeModel.js';
-
-interface FolderSelectChipProps {
-  /** このフォルダが選択中（＝右ペインに中身を表示中）か。 */
-  selected: boolean;
-  onClick: () => void;
-}
+import type { TreeRow } from './folderTreeModel.js';
+import type { MouseEvent } from 'react';
 
 interface FolderTreeItemProps {
-  folder: FolderTreeNode;
-  /** 階層の深さ（0 = 最上位）。インデントガイドに使う。 */
-  depth: number;
-  expandedIds: Set<string>;
-  onToggle: (id: string) => void;
-  /** 選択中フォルダ（null = すべて）。 */
-  selectedFolderId: string | null;
-  /** フォルダ選択の切り替え（null = すべてに戻す）。 */
-  onSelectFolder: (id: string | null) => void;
+  /** 描画対象の可視行（「すべて」/ フォルダ / 「さらに N 件…」）。 */
+  row: TreeRow;
+  /** この行が現在のスコープか（「すべて」行なら scope=null のとき、フォルダ行なら scope=folder.id のとき）。 */
+  scoped: boolean;
+  /** 左ペイン（フォルダツリー）自体がキーボードフォーカスを持つか（AC-14 の相互アクセント用）。 */
+  paneFocused: boolean;
+  /** この行がフォーカス中か（主に「さらに N 件…」行の薄い背景に使う）。 */
+  focused: boolean;
+  /** フォルダ行が展開中か。 */
+  expanded: boolean;
+  /** 展開/折りたたみ（三角ボタン）。子なしフォルダでは呼ばれない。 */
+  onToggleExpand: () => void;
+  /** スコープ選択（フォルダ名・「すべて」のクリック）。 */
+  onSelectScope: () => void;
+  /** 「さらに N 件…」で残りを表示する。 */
+  onRevealMore: () => void;
+  /** スクロール追従のための行要素登録。 */
+  registerRef: (el: HTMLElement | null) => void;
 }
 
-/**
- * フォルダ選択ボタン（📎クリップ・件数表示の位置に置換）。押下でそのフォルダを選択し、
- * 右ペインに中身（配下ブックマーク）を表示する。選択状態はチェックのように強調せず、押すためのボタンに徹する。
- * 横スクロール時も常に見えるよう `sticky right-0` で右端に固定し、背景でスクロール中の名前を隠す。
- * 検索ボックスへのフォルダチップ挿入・直下トグル・ツリー⇄チップ同期は U11。
- */
-export const FolderSelectChip = ({ selected, onClick }: FolderSelectChipProps) => (
-  <button
-    type="button"
-    aria-pressed={selected}
-    aria-label={selected ? 'このフォルダの表示を解除' : 'このフォルダの中身を表示'}
-    title={selected ? 'このフォルダを表示中（クリックで解除）' : 'このフォルダの中身を表示'}
-    onClick={onClick}
-    className={cn(
-      'sticky right-0 ml-auto flex-none cursor-pointer rounded-md px-1.5 py-0.5 text-[15px] leading-none',
-      selected ? 'bg-accent-bg' : 'bg-pane hover:bg-accent-bg',
-    )}>
-    📎
-  </button>
+/** 深さ分のインデントガイド線セルを描く（design 2a/2b。第4階層以降は詰める）。 */
+const IndentGuides = ({ depth }: { depth: number }) => (
+  <>
+    {Array.from({ length: depth }, (_, i) => (
+      <span
+        key={i}
+        aria-hidden="true"
+        className="border-line flex-none self-stretch border-l"
+        style={{ width: i >= TRUNCATE_DEPTH ? 8 : 14 }}
+      />
+    ))}
+  </>
 );
 
+/** クリックでフォーカスを奪わせず、ハンドラ実行後はクリック側（FolderTree）がツリールートへ戻す（AC-8）。 */
+const preventFocusSteal = (e: MouseEvent) => e.preventDefault();
+
 /**
- * 左ペインのフォルダ1行（+ 子の再帰描画）。
- * - 「展開三角 + フォルダ画像（📁） + フォルダ名」の全体を押下すると展開/折りたたみ（U7 は表示のみ）。
- * - フォルダ名の右の選択チップで、そのフォルダを選択して中身を表示する。
- * 展開永続・多階層省略・検索ボックスへのフォルダチップ挿入は U11。
+ * 左ペインの可視行1件（U11・フラット描画）。押下対象を2つに分離する:
+ * - **展開三角（chevron ボタン）**: 展開/折りたたみ専用（子ありのみ・素の ▸/▾ ではなく押下と分かる見た目）。
+ * - **「📁 フォルダ名」**: スコープ選択（子なしフォルダも押下可）。スコープ中は accent 塗り + 白文字。
+ *
+ * キーボード操作は Popup の document リスナーが担うため、行内 `<button>` はフォーカスを保持しない
+ * （`onMouseDown` で preventDefault し、クリック処理側がツリールートへ DOM フォーカスを戻す = AC-8）。
  */
 export const FolderTreeItem = ({
-  folder,
-  depth,
-  expandedIds,
-  onToggle,
-  selectedFolderId,
-  onSelectFolder,
+  row,
+  scoped,
+  paneFocused,
+  focused,
+  expanded,
+  onToggleExpand,
+  onSelectScope,
+  onRevealMore,
+  registerRef,
 }: FolderTreeItemProps) => {
-  const hasChildren = folder.children.length > 0;
-  const expanded = expandedIds.has(folder.id);
-  const selected = selectedFolderId === folder.id;
-  // 深い階層ほどインデントを詰め、最下層のフォルダ名幅を確保する（docs/design 2b「深階層はインデントを詰める」に準拠）。
-  const childIndent = depth === 0 ? 'ml-[12px]' : depth <= 2 ? 'ml-[10px]' : 'ml-[6px]';
+  // 相互アクセント（AC-14）: アクティブ時のスコープは accent 塗り + 白（強）、
+  // 非アクティブ時は accent 淡背景 + accent 文字（弱）。フォーカスがどのペインにあるかを色で示す。
+  const scopedStrong = scoped && paneFocused;
+  const scopedMuted = scoped && !paneFocused;
+  // 「すべて」行: 最上位・太字・高さ32（design「ツリー行 30（最上位32）」）。
+  if (row.kind === 'all') {
+    return (
+      <div ref={registerRef} role="treeitem" aria-selected={scoped} className="flex h-8 items-center">
+        <button
+          type="button"
+          aria-current={scoped ? 'true' : undefined}
+          onMouseDown={preventFocusSteal}
+          onClick={onSelectScope}
+          className={cn(
+            'flex h-8 flex-1 cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-md px-[10px] text-left text-[14px] font-bold',
+            scopedStrong && 'bg-accent text-white',
+            scopedMuted && 'bg-accent-bg text-accent-strong',
+            !scoped && 'text-ink hover:bg-accent-bg',
+          )}>
+          <span aria-hidden="true">📁</span>
+          <span>すべて</span>
+        </button>
+      </div>
+    );
+  }
 
-  // 配下フォルダを持つ行は開閉三角を濃く表示し「押せる」ことを示す（子なしは三角なし）。
-  const triangle = (
-    <span
-      className={cn('w-[12px] flex-none text-[11px]', expanded ? 'text-ink-faint' : 'text-ink-soft')}
-      aria-hidden="true">
-      {hasChildren ? (expanded ? '▾' : '▸') : ''}
-    </span>
-  );
-  // 配下があり展開中は開いたフォルダ（📂）、それ以外は閉じたフォルダ（📁）。開閉状態を直感的に示す。
-  const icon = (
-    <span className="flex-none text-[16px]" aria-hidden="true">
-      {hasChildren && expanded ? '📂' : '📁'}
-    </span>
-  );
-  // 名前は省略せず表示し、見切れる場合は左ペインの横スクロール（スライド）で全表示する。
-  const name = (
-    <span className="whitespace-nowrap text-[14px]" title={folder.title}>
-      {folder.title}
-    </span>
-  );
+  // 「さらに N 件…」行: フォルダではないためスコープにならない。フォーカス中は薄い背景で位置を示す。
+  if (row.kind === 'more') {
+    return (
+      <div ref={registerRef} role="treeitem" aria-selected={false} className="flex h-[26px] items-center">
+        <IndentGuides depth={row.depth} />
+        <button
+          type="button"
+          onMouseDown={preventFocusSteal}
+          onClick={onRevealMore}
+          className={cn(
+            'text-ink-faint flex h-[26px] flex-1 cursor-pointer items-center rounded-md px-2 text-left text-[11px]',
+            focused ? 'bg-pane-3' : 'hover:bg-pane-3',
+          )}>
+          さらに {row.hiddenCount} 件…
+        </button>
+      </div>
+    );
+  }
+
+  // フォルダ行。
+  const folder = row.folder;
+  const hasChildren = folder.children.length > 0;
 
   return (
-    <div className="flex flex-col gap-[1px]">
-      <div
-        className={cn(
-          'flex h-[34px] items-center gap-[6px] rounded-md',
-          depth === 0 ? 'text-ink px-[10px] font-medium' : 'text-ink-2 px-2',
-        )}>
-        {hasChildren ? (
-          <button
-            type="button"
-            aria-label={expanded ? '折りたたむ' : '展開'}
-            onClick={() => onToggle(folder.id)}
-            className="hover:bg-accent-bg flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-md px-1 py-0.5 text-left">
-            {triangle}
-            {icon}
-            {name}
-          </button>
-        ) : (
-          // 子のないフォルダは開閉不可。押下対象にせず（三角なし・ホバーなし）、選択は 📎 のみ。
-          <span className="text-ink-faint flex items-center gap-[6px] whitespace-nowrap px-1 py-0.5">
-            {triangle}
-            {icon}
-            {name}
-          </span>
-        )}
-        <FolderSelectChip selected={selected} onClick={() => onSelectFolder(selected ? null : folder.id)} />
-      </div>
-
-      {hasChildren && expanded && (
-        <div className={cn('border-line flex flex-col gap-[1px] border-l pl-[8px]', childIndent)}>
-          {folder.children.map(child => (
-            <FolderTreeItem
-              key={child.id}
-              folder={child}
-              depth={depth + 1}
-              expandedIds={expandedIds}
-              onToggle={onToggle}
-              selectedFolderId={selectedFolderId}
-              onSelectFolder={onSelectFolder}
+    <div ref={registerRef} role="treeitem" aria-selected={scoped} className="flex h-[30px] items-center">
+      <IndentGuides depth={row.depth} />
+      {/* 展開トグル（子ありのみ）。子なしは同寸の空枠でインデントを揃える。 */}
+      {hasChildren ? (
+        <button
+          type="button"
+          aria-label={expanded ? '折りたたむ' : '展開'}
+          aria-expanded={expanded}
+          onMouseDown={preventFocusSteal}
+          onClick={onToggleExpand}
+          className={cn(
+            'flex size-5 flex-none cursor-pointer items-center justify-center rounded',
+            scopedStrong && 'text-white/75 hover:bg-white/20',
+            scopedMuted && 'text-accent-strong hover:bg-white/40',
+            !scoped && 'text-triangle hover:bg-accent-bg',
+          )}>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            aria-hidden="true"
+            className={cn('transition-transform', expanded && 'rotate-90')}>
+            <path
+              d="M3.5 2 L6.5 5 L3.5 8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-          ))}
-        </div>
+          </svg>
+        </button>
+      ) : (
+        <span aria-hidden="true" className="size-5 flex-none" />
       )}
+      {/* スコープ選択（子なしフォルダも押下可）。 */}
+      <button
+        type="button"
+        aria-current={scoped ? 'true' : undefined}
+        title={folder.title}
+        onMouseDown={preventFocusSteal}
+        onClick={onSelectScope}
+        className={cn(
+          'flex h-[30px] flex-1 cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-md px-1.5 text-left text-[14px]',
+          scopedStrong && 'bg-accent font-bold text-white',
+          scopedMuted && 'bg-accent-bg text-accent-strong font-bold',
+          !scoped && 'text-ink-2 hover:bg-accent-bg',
+        )}>
+        <span aria-hidden="true" className="text-[15px]">
+          {hasChildren && expanded ? '📂' : '📁'}
+        </span>
+        <span>{folder.title}</span>
+      </button>
     </div>
   );
 };

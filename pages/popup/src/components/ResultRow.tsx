@@ -10,6 +10,8 @@ interface ResultRowProps {
   item: SearchResultItem;
   /** 選択中（↑↓/ホバーのハイライト対象）か。 */
   selected: boolean;
+  /** 右ペイン（結果リスト）がキーボードフォーカスを持つか（AC-14 の相互アクセント用）。 */
+  resultFocused?: boolean;
   /** この行が別名編集中（ALIAS_EDIT の対象）か。 */
   editingAlias?: boolean;
   /** この行がインライン編集中（INLINE_EDIT の対象）か。 */
@@ -61,6 +63,7 @@ const isAscii = (s: string): boolean => {
 export const ResultRow = ({
   item,
   selected,
+  resultFocused = false,
   editingAlias = false,
   editingInline = false,
   dimmed = false,
@@ -145,7 +148,11 @@ export const ResultRow = ({
       title={item.node.title}
       className={cn(
         'border-line-row group flex h-14 w-full flex-none flex-col justify-center gap-[5px] border-b px-4 text-left',
-        selected ? 'bg-row-selected' : 'hover:bg-pane-3',
+        // 相互アクセント（AC-14）: 右ペインがアクティブなら選択行を濃いめの accent 淡背景（強）、
+        // 非アクティブなら中立グレー背景（弱）。左バーはフォーカス枠の外へはみ出して見えるため使わない。
+        selected && resultFocused && 'bg-accent-bg-selected',
+        selected && !resultFocused && 'bg-row-selected',
+        !selected && 'hover:bg-pane-3',
         dimmed && 'opacity-40',
       )}>
       {/* 1段目 */}

@@ -22,6 +22,10 @@ interface ResultListProps {
   selectedIndex: number;
   /** 結果0件時に中央表示する文言（読み込み中/本当に0件を呼び出し側が出し分ける）。 */
   emptyLabel: string;
+  /** 右ペイン上部のメタ行文言（U11・スコープと件数）。null ならメタ行を描画しない（design 1a）。 */
+  metaLabel?: string | null;
+  /** 右ペイン（結果リスト）がキーボードフォーカスを持つか（AC-14 の相互アクセント用）。 */
+  resultFocused?: boolean;
   /** 別名編集中（ALIAS_EDIT）の対象ブックマーク ID（`node.id`）。null なら編集なし。 */
   editingAliasId?: string | null;
   /** インライン編集中（INLINE_EDIT）の対象ブックマーク ID（`node.id`）。null なら編集なし。 */
@@ -59,6 +63,8 @@ export const ResultList = ({
   results,
   selectedIndex,
   emptyLabel,
+  metaLabel = null,
+  resultFocused = false,
   editingAliasId = null,
   editingInlineId = null,
   onOpen,
@@ -116,42 +122,54 @@ export const ResultList = ({
   const isAnyEditing = editingAliasId !== null || editingInlineId !== null;
 
   return (
-    <div ref={containerRef} onScroll={e => setScrollTop(e.currentTarget.scrollTop)} className="h-full overflow-auto">
-      {results.length === 0 ? (
-        <div className="text-ink-faint flex h-full items-center justify-center px-6 text-center text-[12.5px]">
-          {emptyLabel}
-        </div>
-      ) : (
-        // 総高スペーサ + 可視分のみ translateY で配置
-        <div style={{ height: spacerHeight, position: 'relative' }}>
-          <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
-            {visible.map((item, i) => {
-              const index = startIndex + i;
-              const isEditingThisAlias = item.node.id === editingAliasId;
-              const isEditingThisInline = item.node.id === editingInlineId;
-              return (
-                <ResultRow
-                  key={item.node.id}
-                  item={item}
-                  selected={index === selectedIndex}
-                  editingAlias={isEditingThisAlias}
-                  editingInline={isEditingThisInline}
-                  dimmed={isAnyEditing && !isEditingThisAlias && !isEditingThisInline}
-                  onOpen={() => onOpen(index)}
-                  onHover={() => onHover(index)}
-                  onEnterAliasEdit={onEnterAliasEdit ? () => onEnterAliasEdit(index) : undefined}
-                  onCommitAliases={onCommitAliases}
-                  onCloseAliasEdit={onCloseAliasEdit}
-                  onEnterInlineEdit={onEnterInlineEdit ? () => onEnterInlineEdit(index) : undefined}
-                  onCommitEdit={onCommitEdit}
-                  onCancelEdit={onCancelEdit}
-                  onDelete={onDeleteRow ? () => onDeleteRow(index) : undefined}
-                />
-              );
-            })}
-          </div>
+    // メタ行はスクロールコンテナの外側上部に固定し、仮想スクロールの高さ計測（ResizeObserver）に影響させない。
+    <div className="flex h-full flex-col">
+      {metaLabel !== null && (
+        <div className="bg-pane-3 border-line-row text-ink-soft flex h-[34px] flex-none items-center border-b px-4 text-[11.5px]">
+          {metaLabel}
         </div>
       )}
+      <div
+        ref={containerRef}
+        onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+        className="min-h-0 flex-1 overflow-auto">
+        {results.length === 0 ? (
+          <div className="text-ink-faint flex h-full items-center justify-center px-6 text-center text-[12.5px]">
+            {emptyLabel}
+          </div>
+        ) : (
+          // 総高スペーサ + 可視分のみ translateY で配置
+          <div style={{ height: spacerHeight, position: 'relative' }}>
+            <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
+              {visible.map((item, i) => {
+                const index = startIndex + i;
+                const isEditingThisAlias = item.node.id === editingAliasId;
+                const isEditingThisInline = item.node.id === editingInlineId;
+                return (
+                  <ResultRow
+                    key={item.node.id}
+                    item={item}
+                    selected={index === selectedIndex}
+                    resultFocused={resultFocused}
+                    editingAlias={isEditingThisAlias}
+                    editingInline={isEditingThisInline}
+                    dimmed={isAnyEditing && !isEditingThisAlias && !isEditingThisInline}
+                    onOpen={() => onOpen(index)}
+                    onHover={() => onHover(index)}
+                    onEnterAliasEdit={onEnterAliasEdit ? () => onEnterAliasEdit(index) : undefined}
+                    onCommitAliases={onCommitAliases}
+                    onCloseAliasEdit={onCloseAliasEdit}
+                    onEnterInlineEdit={onEnterInlineEdit ? () => onEnterInlineEdit(index) : undefined}
+                    onCommitEdit={onCommitEdit}
+                    onCancelEdit={onCancelEdit}
+                    onDelete={onDeleteRow ? () => onDeleteRow(index) : undefined}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

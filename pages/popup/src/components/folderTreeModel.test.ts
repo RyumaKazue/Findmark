@@ -1,5 +1,18 @@
-import { buildFolderTree, countDescendants, totalBookmarkCount } from './folderTreeModel.js';
+import {
+  buildFolderTree,
+  collectAncestorIds,
+  compressPath,
+  countDescendants,
+  findFolderPath,
+  findParentId,
+  flattenVisibleTree,
+  formatPath,
+  moveRow,
+  rowKey,
+  totalBookmarkCount,
+} from './folderTreeModel.js';
 import { describe, expect, it } from 'vitest';
+import type { FolderTreeNode } from './folderTreeModel.js';
 import type { BookmarkNode } from '@extension/storage';
 
 // 実 chrome 構造を模した getTree() 相当のツリー:
@@ -90,5 +103,126 @@ describe('buildFolderTree', () => {
 describe('totalBookmarkCount', () => {
   it('ツリー全体のブックマーク数を返す（「すべて」の件数）', () => {
     expect(totalBookmarkCount(tree)).toBe(3);
+  });
+});
+
+// ── U11: 可視行フラット化・移動・親/祖先解決・パス圧縮 ─────────────────────────
+
+/** テスト用のフォルダ表示ノードを簡潔に作る。 */
+const f = (id: string, title: string, children: FolderTreeNode[] = []): FolderTreeNode => ({
+  id,
+  title,
+  count: 0,
+  children,
+});
+
+// バー > 開発 > (aws, chrome), 記事
+const folders: FolderTreeNode[] = [
+  f('1', 'ブックマークバー', [f('2', '開発', [f('3', 'aws'), f('4', 'chrome')]), f('5', '記事')]),
+];
+
+describe('flattenVisibleTree', () => {
+  it('先頭は必ず「すべて」行、展開なしでは最上位フォルダのみ並ぶ', () => {
+    const rows = flattenVisibleTree(folders, { expandedIds: new Set(), revealedIds: new Set() });
+    expect(rows.map(rowKey)).toEqual(['all', 'f:1']);
+  });
+
+  it('展開中フォルダのみ子を展開する', () => {
+    const rows = flattenVisibleTree(folders, { expandedIds: new Set(['1']), revealedIds: new Set() });
+    expect(rows.map(rowKey)).toEqual(['all', 'f:1', 'f:2', 'f:5']);
+  });
+
+  it('折りたたむと子が消える', () => {
+    const rows = flattenVisibleTree(folders, { expandedIds: new Set(['1', '2']), revealedIds: new Set() });
+    expect(rows.map(rowKey)).toEqual(['all', 'f:1', 'f:2', 'f:3', 'f:4', 'f:5']);
+    const collapsed = flattenVisibleTree(folders, { expandedIds: new Set(['1']), revealedIds: new Set() });
+    expect(collapsed.map(rowKey)).not.toContain('f:3');
+  });
+
+  it('深さ5（0起点 depth=4）の子グループは先頭2件+more で打ち切る', () => {
+    // depth: bar=0, L1=1, L2=2, L3=3, 子(a..d)=4 で打ち切り対象
+    const deep: FolderTreeNode[] = [
+      f('bar', 'バー', [
+        f('L1', 'L1', [f('L2', 'L2', [f('L3', 'L3', [f('a', 'a'), f('b', 'b'), f('c', 'c'), f('d', 'd')])])]),
+      ]),
+    ];
+    const expandedIds = new Set(['bar', 'L1', 'L2', 'L3']);
+    const rows = flattenVisibleTree(deep, { expandedIds, revealedIds: new Set() });
+    const moreRow = rows.find(r => r.kind === 'more');
+    expect(moreRow).toEqual({ kind: 'more', parentId: 'L3', hiddenCount: 2, depth: 4 });
+    // a, b は表示され c, d は隠れる
+    expect(rows.map(rowKey)).toContain('f:a');
+    expect(rows.map(rowKey)).toContain('f:b');
+    expect(rows.map(rowKey)).not.toContain('f:c');
+  });
+
+  it('revealedIds に親があれば深い階層でも全件表示し more を出さない', () => {
+    const deep: FolderTreeNode[] = [
+      f('bar', 'バー', [f('L1', 'L1', [f('L2', 'L2', [f('L3', 'L3', [f('a', 'a'), f('b', 'b'), f('c', 'c')])])])]),
+    ];
+    const expandedIds = new Set(['bar', 'L1', 'L2', 'L3']);
+    const rows = flattenVisibleTree(deep, { expandedIds, revealedIds: new Set(['L3']) });
+    expect(rows.some(r => r.kind === 'more')).toBe(false);
+    expect(rows.map(rowKey)).toContain('f:c');
+  });
+});
+
+describe('moveRow', () => {
+  const rows = flattenVisibleTree(folders, { expandedIds: new Set(['1']), revealedIds: new Set() });
+  // ['all', 'f:1', 'f:2', 'f:5']
+  it('次/前の行へ移動する', () => {
+    expect(moveRow(rows, 'all', 1)).toEqual({ kind: 'folder', folder: folders[0], depth: 0 });
+    expect(rowKey(moveRow(rows, 'f:2', 1)!)).toBe('f:5');
+    expect(rowKey(moveRow(rows, 'f:2', -1)!)).toBe('f:1');
+  });
+
+  it('端では null を返す', () => {
+    expect(moveRow(rows, 'all', -1)).toBeNull();
+    expect(moveRow(rows, 'f:5', 1)).toBeNull();
+  });
+
+  it('存在しないキーは null', () => {
+    expect(moveRow(rows, 'f:999', 1)).toBeNull();
+  });
+});
+
+describe('findParentId', () => {
+  it('親フォルダ ID を返す', () => {
+    expect(findParentId(folders, '3')).toBe('2'); // aws の親は 開発
+    expect(findParentId(folders, '2')).toBe('1'); // 開発 の親は バー
+  });
+
+  it('最上位フォルダ（真のルート直下）は null（← は no-op）', () => {
+    expect(findParentId(folders, '1')).toBeNull();
+  });
+
+  it('存在しない ID は null', () => {
+    expect(findParentId(folders, 'x')).toBeNull();
+  });
+});
+
+describe('collectAncestorIds', () => {
+  it('自身を含まない祖先 ID をルート順に返す', () => {
+    expect(collectAncestorIds(folders, '4')).toEqual(['1', '2']); // chrome の祖先
+  });
+
+  it('最上位フォルダの祖先は空', () => {
+    expect(collectAncestorIds(folders, '1')).toEqual([]);
+  });
+});
+
+describe('findFolderPath / compressPath / formatPath', () => {
+  it('自身を含むタイトル配列を返す（/ を含む名前でも壊れない）', () => {
+    const slash: FolderTreeNode[] = [f('1', 'A/B', [f('2', 'C')])];
+    expect(findFolderPath(slash, '2')).toEqual(['A/B', 'C']);
+    expect(formatPath(findFolderPath(slash, '2'))).toBe('A/B / C');
+  });
+
+  it('深さ4以下は圧縮しない', () => {
+    expect(compressPath(['a', 'b', 'c', 'd'])).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('深さ5以上は「先頭1 + … + 末尾2」に圧縮する', () => {
+    expect(compressPath(['開発', 'tools', 'samples', 'mv3', 'x'])).toEqual(['開発', '…', 'mv3', 'x']);
   });
 });
