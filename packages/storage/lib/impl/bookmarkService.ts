@@ -138,6 +138,16 @@ export class BookmarkService {
   }
 
   /**
+   * 指定 URL に一致する既存ブックマークを検索する（現在ページ登録時の重複判定・U14）。
+   * `chrome.bookmarks.search` はフォルダも返しうるため、`url` を持つ最初の一致のみを返す。
+   */
+  async findByUrl(url: string): Promise<BookmarkNode | null> {
+    const results = await this.bookmarks.search({ url });
+    const first = results.find(r => r.url !== undefined);
+    return first ? this.toDomain(first) : null;
+  }
+
+  /**
    * ファビコン取得用の URL を組み立てて返す（同期）。
    * `chrome-extension://<runtime.id>/_favicon/?pageUrl=...&size=...` を生成し、
    * `chrome.runtime.id` へのアクセスをデータ層に閉じ込める。UI はこの文字列を `<img src>` に渡すだけ。

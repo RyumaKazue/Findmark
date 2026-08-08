@@ -11,6 +11,8 @@ interface SearchHeaderProps {
    * チップは**表示専用**（`✕` なし・操作主体ではない）。解除は Escape の段階戻り、「すべて」復帰は Home が担う（U11）。
    */
   scopePath?: string[] | null;
+  /** 「＋追加」クリックで現在ページを登録する（U14）。 */
+  onAddCurrent?: () => void;
 }
 
 /**
@@ -21,7 +23,7 @@ interface SearchHeaderProps {
  * 廃止し（既定フォーカスは左ペイン = FOLDER_TREE）、フォーカス制御は Popup が一元管理する。
  * キー割り当て（↑↓/Enter/Escape）は U8 のモード状態機械（Popup の document リスナー）に集約している。
  */
-export const SearchHeader = ({ query, onQueryChange, inputRef, scopePath = null }: SearchHeaderProps) => (
+export const SearchHeader = ({ query, onQueryChange, inputRef, scopePath = null, onAddCurrent }: SearchHeaderProps) => (
   <header className="border-line flex h-14 flex-none items-center gap-3 border-b px-[14px]">
     <div className="border-line-input bg-pane-2 focus-within:border-accent focus-within:shadow-focus-ring flex h-[34px] flex-1 items-center gap-2 rounded-md border px-[10px] focus-within:bg-white">
       {/* 虫眼鏡 14×14・stroke #9AA1AE（docs/design/README.md「1a」） */}
@@ -48,7 +50,8 @@ export const SearchHeader = ({ query, onQueryChange, inputRef, scopePath = null 
     </div>
     <button
       type="button"
-      title="現在のページを追加（U14 で実装）"
+      title="現在のページを追加（Ctrl/Cmd+D）"
+      onClick={onAddCurrent}
       className="bg-accent flex h-[34px] flex-none items-center gap-1.5 rounded-md px-[14px] text-[12.5px] font-bold text-white">
       <span aria-hidden="true">＋</span>追加
     </button>
