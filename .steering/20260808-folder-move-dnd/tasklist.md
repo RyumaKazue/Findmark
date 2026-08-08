@@ -42,6 +42,12 @@
 - **対応**: コード変更なし。docs/functional-design.md UC-3 に注記を追加、requirements.md AC-6 を明確化して整合を取った。品質ゲート（test/lint/type-check）は前回の緑を維持。
 - **ラウンド2（追試）**: 「その他のブックマークの中身だけ表示される」も同一原因（右ペインが当該フォルダにスコープ中）。「すべて」/Home で復旧することをユーザーが確認（「直りました」）。追加対応なし。
 
+### ラウンド3（受け入れ後の不具合報告・2026-08-08）
+- **NG報告**: Ctrl+M でパネルを開いた後、Enter で選択フォルダを確定できず、開いた時点で選択されていたブックマークが開いてしまう。マウスでのフォルダクリックと同じ挙動（＝移動確定）にしたい。
+- **原因**: MovePanel のキー処理を「パネルルートの React `onKeyDown`（＝DOM フォーカスがパネル内にある時のみ発火）」に依存していた。フォーカスが背景の結果行 `<button>` にあると、Enter がその背景ボタンを native に活性化し、ブックマークを開いていた（分類A: 実装欠陥）。
+- **対応（コード変更）**: FolderTree と同じ**命令ハンドル方式**へ変更。`MovePanel` が `actionsRef`（`selectPrev/selectNext/confirm/close/focusInput`）を公開し、`↑↓/Enter/Escape/Tab` は Popup の document リスナー（PANEL 分岐）が `preventDefault` して実行する。これにより DOM フォーカス位置に依らず Enter が確定として働き、背景ブックマークの誤オープンを防止（マウスクリックの確定と一致）。文字入力は絞り込み input が素通しで受ける。
+- **検証**: `pnpm test`/`type-check`/`lint` すべて exit 0（前景確認）。修正対象は `MovePanel.tsx`（actionsRef 公開）・`Popup.tsx`（PANEL 分岐追加）。
+
 ## 申し送り事項（振り返り・2026-08-08）
 
 - **実装完了日**: 2026-08-08

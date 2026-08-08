@@ -1,10 +1,27 @@
 import { buildMoveCandidates, clampIndex, filterCandidates } from './movePanelModel.js';
-import { resolveKeyIntent } from '../hooks/modeMachine.js';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderTreeNode } from './folderTreeModel.js';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { RefObject } from 'react';
+
+/**
+ * Popup の document リスナーから呼ばれるパネル操作（`panel:*` インテントの実行体）。
+ * FolderTree の `FolderTreeActions` と同じ設計: キー処理は document レベルで一元化し、DOM フォーカスが
+ * どこにあってもキー操作が一貫して効くようにする（背景の結果行ボタンに Enter が奪われて誤って開く問題の解消）。
+ */
+interface MovePanelActions {
+  /** `panel:candidate-up`。候補を1つ上へ。 */
+  selectPrev: () => void;
+  /** `panel:candidate-down`。候補を1つ下へ。 */
+  selectNext: () => void;
+  /** `panel:confirm`。現在の候補を確定して移動（現在の親＝disabled なら何もしない）。 */
+  confirm: () => void;
+  /** `panel:close`。パネルを閉じる。 */
+  close: () => void;
+  /** `Tab`。フォーカスを絞り込み input へ引き戻す（文字入力を維持するため）。 */
+  focusInput: () => void;
+}
 
 interface MovePanelProps {
   /** 左ペインと同じフォルダツリー（候補の元）。 */
@@ -15,19 +32,23 @@ interface MovePanelProps {
   onConfirm: (folderId: string, folderPath: string[]) => void;
   /** パネルを閉じる（Escape / 背景クリック）。 */
   onClose: () => void;
+  /** キーボードインテントを受け取るための命令ハンドル（Popup の document リスナーが呼ぶ）。 */
+  actionsRef: RefObject<MovePanelActions | null>;
 }
 
 /**
  * フォルダ選択パネル（MovePanel・U12・PANEL モード / デザインのパネル）。
  *
  * `Ctrl(Cmd)+M` で開き、フォルダ名を絞り込み入力 → `↑↓` で候補移動 → `Enter` で移動する
- * （PRD 機能7「キーボード代替は必須」）。自前の `<input>` を持つため、キー処理はパネル内で自己完結する
- * （`isSearchFirstExempt('PANEL')` により検索ボックスへ奪われない）。現在の親フォルダはグレーアウトして
- * 選択・確定できない（AC-3）。マウス操作（候補クリック）でも確定できる。
+ * （PRD 機能7「キーボード代替は必須」）。**キー操作（↑↓/Enter/Escape/Tab）は Popup の document リスナーが
+ * `actionsRef` 経由で実行する**（FolderTree と同じ命令ハンドル方式）。これにより、フォーカスが背景の結果行など
+ * パネル外にあっても Enter が確定として働き、背景のブックマークを誤って開かない。文字入力は絞り込み input が
+ * native に受ける（`↑↓/Enter/Escape` 以外のキーは document リスナーが素通しする）。現在の親フォルダは
+ * グレーアウトして選択・確定できない（AC-3）。マウス操作（候補クリック）でも確定できる。
  *
  * 絞り込み・候補構築・インデックスクランプは純粋モデル（`movePanelModel`）に委譲する。
  */
-export const MovePanel = ({ folders, currentParentId, onConfirm, onClose }: MovePanelProps) => {
+export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, actionsRef }: MovePanelProps) => {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +60,7 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose }: Move
     [candidates, query],
   );
 
-  // 開いたら絞り込み入力へフォーカスする（キーボード完結の起点）。
+  // 開いたら絞り込み入力へフォーカスする（文字入力の起点。キー操作自体は document リスナーが担う）。
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -54,53 +75,32 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose }: Move
     listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [index, filtered]);
 
-  const confirmAt = (i: number) => {
-    const candidate = filtered[i];
-    // 現在の親（disabled）は確定できない（AC-3）。
-    if (!candidate || candidate.disabled) {
-      return;
-    }
-    onConfirm(candidate.id, candidate.path);
-  };
+  const confirmAt = useCallback(
+    (i: number) => {
+      const candidate = filtered[i];
+      // 現在の親（disabled）は確定できない（AC-3）。
+      if (!candidate || candidate.disabled) {
+        return;
+      }
+      onConfirm(candidate.id, candidate.path);
+    },
+    [filtered, onConfirm],
+  );
 
-  // キー処理はパネルのルートで委譲的に拾う（フォーカスが候補ボタン等に移っても ↑↓/Enter/Escape が効くように）。
-  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    // IME 変換確定中の Enter/Escape 等を操作として扱わない（native event の isComposing を見る）。
-    if (e.nativeEvent.isComposing) {
-      return;
-    }
-    // Tab はフォーカスをパネル内（絞り込み input）に閉じ込める。パネル外の結果行へ逃がすと Escape 等が届かなくなる。
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      inputRef.current?.focus();
-      return;
-    }
-    const intent = resolveKeyIntent('PANEL', e);
-    switch (intent) {
-      case 'panel:candidate-up':
-        e.preventDefault();
-        setIndex(i => clampIndex(i - 1, filtered.length));
-        return;
-      case 'panel:candidate-down':
-        e.preventDefault();
-        setIndex(i => clampIndex(i + 1, filtered.length));
-        return;
-      case 'panel:confirm':
-        e.preventDefault();
-        confirmAt(index);
-        return;
-      case 'panel:close':
-        e.preventDefault();
-        onClose();
-        return;
-      default:
-        break;
-    }
-  };
+  // 命令ハンドルを毎レンダー最新の closure で公開する（FolderTree の actionsRef と同方式）。
+  const selectPrev = useCallback(() => setIndex(i => clampIndex(i - 1, filtered.length)), [filtered.length]);
+  const selectNext = useCallback(() => setIndex(i => clampIndex(i + 1, filtered.length)), [filtered.length]);
+  const confirm = useCallback(() => confirmAt(index), [confirmAt, index]);
+  const focusInput = useCallback(() => inputRef.current?.focus(), []);
+  useEffect(() => {
+    actionsRef.current = { selectPrev, selectNext, confirm, close: onClose, focusInput };
+    return () => {
+      actionsRef.current = null;
+    };
+  }, [actionsRef, selectPrev, selectNext, confirm, onClose, focusInput]);
 
   return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- キーは委譲で拾う（フォーカスは input に閉じ込め済み）。
-    <div className="absolute inset-0 z-20 flex items-start justify-center pt-16" onKeyDown={handleKeyDown}>
+    <div className="absolute inset-0 z-20 flex items-start justify-center pt-16">
       {/* 背景オーバーレイ（クリックで閉じる）。native button でキーボード/マウス双方に対応する。 */}
       <button
         type="button"
@@ -165,3 +165,5 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose }: Move
     </div>
   );
 };
+
+export type { MovePanelActions };
