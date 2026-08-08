@@ -85,6 +85,24 @@ export interface UserSettings {
   locale?: 'ja' | 'en';
 }
 
+/**
+ * ポップアップを閉じた時点の UI 状態（機能13「ポップアップ状態の復元」/ U19）。次回起動時に復元する。
+ *
+ * `focusArea` の union は UI 層（`pages/popup/src/hooks/modeMachine.ts` の `FocusArea`）と**同一の文字列**だが、
+ * レイヤー依存（UI→サービス→データ）で逆依存は禁止のため、最下層のデータ型としてここで独立に定義する。
+ * 選択行は端末/アカウントで変わる**インデックスではなくブックマーク ID** で保持し、結果件数の増減でズレないようにする。
+ */
+export interface PopupSession {
+  /** フォーカス位置。既定: `'folderTree'`（左ペイン）。 */
+  focusArea: 'search' | 'result' | 'folderTree';
+  /** フォルダスコープ。既定: `null`（=「すべて」）。 */
+  scopeFolderId: string | null;
+  /** 選択中ブックマークの ID。既定: 未指定（=先頭行）。ID で保持しインデックスでは持たない。 */
+  selectedBookmarkId?: string;
+  /** 検索クエリ。既定: `''`。 */
+  query: string;
+}
+
 /** 端末固有の状態（`chrome.storage.local`、キー `local_state`、sync 不可）。 */
 export interface LocalState {
   /** フォルダツリーの展開状態（フォルダ ID の配列）。 */
@@ -97,4 +115,9 @@ export interface LocalState {
   isExpandedInitialized?: boolean;
   /** 現在ページ登録時の初期フォルダ（前回使用フォルダ）。 */
   lastUsedFolderId?: string;
+  /**
+   * ポップアップ状態の復元用セッション（U19・機能13）。未保存（初回起動）時は `undefined`。
+   * `createStorage` の既定値オブジェクトには含めない（未保存を `undefined` で表し、既存の既定値の形を変えない）。
+   */
+  session?: PopupSession;
 }
