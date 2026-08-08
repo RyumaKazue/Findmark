@@ -36,6 +36,7 @@ import type { PopupSession } from '@extension/storage';
 import type { FolderTreeActions } from '@src/components/FolderTree';
 import type { FolderTreeNode } from '@src/components/folderTreeModel';
 import type { CommitPlan } from '@src/components/inlineEditModel';
+import type { MovePanelActions } from '@src/components/MovePanel';
 import type { FocusArea, ListFocus } from '@src/hooks/modeMachine';
 
 /** セッション保存の debounce（検索の 120ms より長くし、復元の選択解決が保存より先に走るようにする）。 */
@@ -67,6 +68,8 @@ const Popup = () => {
   const [listFocus, setListFocus] = useState<ListFocus>('search');
   // 左ペインのキーボードインテント実行体（FolderTree が公開）。
   const folderTreeActionsRef = useRef<FolderTreeActions | null>(null);
+  // フォルダ選択パネルのキーボードインテント実行体（MovePanel が公開・U12）。
+  const movePanelActionsRef = useRef<MovePanelActions | null>(null);
   const { results, isIndexReady, isSettled, updateAliases, refresh } = useSearch(query, scopeFolderId);
   // U11: 起動時の既定フォーカスを左ペインにする。
   const mode = useMode('FOLDER_TREE');
@@ -447,6 +450,39 @@ const Popup = () => {
           default:
             break;
         }
+      } else if (currentMode === 'PANEL') {
+        // フォルダ選択パネルのキー操作を document レベルで一元処理する（U12）。DOM フォーカスが背景の結果行
+        // ボタン等にあっても Enter が確定として働き、背景のブックマークを誤って開かない（FolderTree と同方式）。
+        const actions = movePanelActionsRef.current;
+        const intent = resolveKey(e, listFocus);
+        if (intent === 'panel:candidate-up') {
+          e.preventDefault();
+          actions?.selectPrev();
+          return;
+        }
+        if (intent === 'panel:candidate-down') {
+          e.preventDefault();
+          actions?.selectNext();
+          return;
+        }
+        if (intent === 'panel:confirm') {
+          e.preventDefault();
+          actions?.confirm();
+          return;
+        }
+        if (intent === 'panel:close') {
+          e.preventDefault();
+          actions?.close();
+          return;
+        }
+        if (e.key === 'Tab') {
+          // フォーカスを絞り込み input へ引き戻す（パネル外の結果行へ逃がさない）。
+          e.preventDefault();
+          actions?.focusInput();
+          return;
+        }
+        // ↑↓/Enter/Escape/Tab 以外（文字・Backspace 等）は絞り込み input が native に受ける。
+        return;
       }
 
       // 検索ファースト復帰: 編集/パネルモード以外で、検索ボックス外にフォーカスがある状態で印字文字または
@@ -699,6 +735,7 @@ const Popup = () => {
           currentParentId={movePanelItem.node.parentId ?? null}
           onConfirm={handleMoveConfirm}
           onClose={focusSearch}
+          actionsRef={movePanelActionsRef}
         />
       )}
       {/* ドラッグ中のゴースト（U12）。カーソル追従の浮遊カード。 */}
