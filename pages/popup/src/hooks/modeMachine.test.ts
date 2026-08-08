@@ -226,15 +226,16 @@ describe('isSearchFirstTriggerKey', () => {
 });
 
 describe('isSearchFirstExempt', () => {
-  it('自前の文字入力 UI を持つモード（編集/別名/パネル）は検索ファースト対象外', () => {
+  it('自前の文字入力 UI を持つモード（編集/別名/パネル）とドラッグ中は検索ファースト対象外', () => {
     expect(isSearchFirstExempt('INLINE_EDIT')).toBe(true);
     expect(isSearchFirstExempt('ALIAS_EDIT')).toBe(true);
     expect(isSearchFirstExempt('PANEL')).toBe(true);
+    // DRAG（U12）: ドラッグ中のキー入力で検索ボックスへフォーカスを飛ばさない。
+    expect(isSearchFirstExempt('DRAG')).toBe(true);
   });
 
-  it('LIST / DRAG / FOLDER_TREE は検索ファーストの対象（対象外にしない）', () => {
+  it('LIST / FOLDER_TREE は検索ファーストの対象（対象外にしない）', () => {
     expect(isSearchFirstExempt('LIST')).toBe(false);
-    expect(isSearchFirstExempt('DRAG')).toBe(false);
     expect(isSearchFirstExempt('FOLDER_TREE')).toBe(false);
   });
 });

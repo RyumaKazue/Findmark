@@ -251,11 +251,14 @@ const isSearchFirstTriggerKey = (e: PrintableKeyLike): boolean => {
  * 自前の文字入力 UI を持つモード（インライン編集・別名編集・フォルダ選択パネル）では、印字文字を検索ボックスへ
  * 奪わない。これを純粋関数に集約することで、後続単位（U12 PANEL 等）は Popup 側のハードコード判定を編集せずに済む。
  *
+ * `DRAG`（U12）も対象にする: ドラッグ中に何かキーが押されても検索ボックスへフォーカスを飛ばさない
+ * （ドラッグ操作の一貫性を保つ。中止は `resolveKeyIntent('DRAG', e)` の `drag:cancel`=Escape が担う）。
+ *
  * `FOLDER_TREE` は意図的に対象外にしない（＝検索ファースト対象）。左ペインで文字を打つと検索ボックスへ復帰する
  * （U8a・functional-design「共通ルール」でフォーカス3状態全体に適用される）。
  */
 const isSearchFirstExempt = (mode: Mode): boolean =>
-  mode === 'INLINE_EDIT' || mode === 'ALIAS_EDIT' || mode === 'PANEL';
+  mode === 'INLINE_EDIT' || mode === 'ALIAS_EDIT' || mode === 'PANEL' || mode === 'DRAG';
 
 /**
  * モード入口ショートカットの意図（対象行 ID は呼び出し側が与える）。

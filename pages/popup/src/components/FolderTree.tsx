@@ -22,6 +22,8 @@ interface FolderTreeActions {
   toggleExpand: () => void;
   /** `folder:home`。スコープを「すべて」へ一発で戻す。 */
   focusAll: () => void;
+  /** D&D のスプリングロード（閉じたフォルダのホバー自動展開・U12）。既に展開済みなら何もしない。 */
+  expand: (id: string) => void;
 }
 
 interface FolderTreeProps {
@@ -37,6 +39,8 @@ interface FolderTreeProps {
   onFoldersLoaded: (folders: FolderTreeNode[]) => void;
   /** キーボードインテントを受け取るための命令ハンドル。 */
   actionsRef: RefObject<FolderTreeActions | null>;
+  /** D&D のドロップ先候補フォルダ ID（破線ハイライト・U12）。null = ハイライトなし。 */
+  dropTargetId?: string | null;
   /**
    * 行を描画してよいか（U19）。`false` の間は行を描画しない（フォルダ取得は継続する）。
    * 状態復元（スコープ）が当たる前に既定スコープ「すべて」で行を描画してしまうと、起動直後に一瞬「すべて」が
@@ -75,6 +79,7 @@ export const FolderTree = ({
   onActivate,
   onFoldersLoaded,
   actionsRef,
+  dropTargetId = null,
   ready = true,
 }: FolderTreeProps) => {
   const [folders, setFolders] = useState<FolderTreeNode[]>([]);
@@ -218,13 +223,26 @@ export const FolderTree = ({
     onScopeChange(null);
   }, [onScopeChange]);
 
+  // D&D スプリングロード: 閉じたフォルダを展開する（既に展開済み・子なしなら何もしない）。
+  // キーボードの `toggle` と同じく展開状態と永続化を更新し、内部モデルの一貫性を保つ（U11 の設計思想）。
+  const expand = useCallback(
+    (id: string) => {
+      const node = findNode(folders, id);
+      if (!node || node.children.length === 0 || expandedIds.has(id)) {
+        return;
+      }
+      toggle(id);
+    },
+    [folders, expandedIds, toggle],
+  );
+
   // 命令ハンドルを毎レンダー最新の closure で公開する（useImperativeHandle 相当）。
   useEffect(() => {
-    actionsRef.current = { moveFocus, focusParent, toggleExpand: toggleExpandFocused, focusAll };
+    actionsRef.current = { moveFocus, focusParent, toggleExpand: toggleExpandFocused, focusAll, expand };
     return () => {
       actionsRef.current = null;
     };
-  }, [actionsRef, moveFocus, focusParent, toggleExpandFocused, focusAll]);
+  }, [actionsRef, moveFocus, focusParent, toggleExpandFocused, focusAll, expand]);
 
   // 左ペインがフォーカスされたら実 DOM フォーカスをツリールートへ当てる（起動直後を含む）。
   useEffect(() => {
@@ -294,6 +312,7 @@ export const FolderTree = ({
               paneFocused={focused}
               focused={key === focusedKey}
               expanded={folderId !== null && expandedIds.has(folderId)}
+              dropTarget={folderId !== null && folderId === dropTargetId}
               onToggleExpand={() => folderId && handleToggle(folderId)}
               onSelectScope={() => handleSelectScope(row.kind === 'folder' ? folderId : null)}
               onRevealMore={() => row.kind === 'more' && handleReveal(row.parentId)}

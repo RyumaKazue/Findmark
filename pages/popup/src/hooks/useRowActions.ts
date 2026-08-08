@@ -8,6 +8,8 @@ export interface UseRowActionsApi {
   commitEdit: (item: SearchResultItem, plan: CommitPlan) => Promise<void>;
   /** 行を削除し、5秒の即時アンドゥを登録する（UC-5 の第1層）。 */
   deleteRow: (item: SearchResultItem) => Promise<void>;
+  /** 行を別フォルダへ移動し、5秒の即時アンドゥを登録する（UC-3・U12）。同一親への移動は no-op。 */
+  moveRow: (item: SearchResultItem, targetFolderId: string, targetFolderPath: string[]) => Promise<void>;
   /** 直近の操作失敗（danger トースト用）。 */
   error: string | null;
   /** エラートーストを閉じる。 */
@@ -114,7 +116,48 @@ export const useRowActions = (
     [refresh, register],
   );
 
+  const moveRow = useCallback(
+    async (item: SearchResultItem, targetFolderId: string, targetFolderPath: string[]) => {
+      const { id, title } = item.node;
+      const originalParentId = item.node.parentId;
+      const originalFolderPath = item.folderPath;
+      // 同じ親への移動は無意味なため何もしない（アンドゥも登録しない）。
+      if (originalParentId === targetFolderId) {
+        return;
+      }
+
+      try {
+        // データ層で即時移動 → 索引を部分更新 → 再検索（UC-3。結果から消さずパス表示だけ更新する）。
+        await bookmarkService.move(id, targetFolderId);
+      } catch (e) {
+        console.error('[useRowActions] 移動に失敗しました:', e);
+        setError('移動できませんでした');
+        return;
+      }
+
+      searchEngine.moveNode(id, targetFolderId, targetFolderPath);
+      refresh();
+
+      register(`「${title}」を移動しました`, async () => {
+        try {
+          // 元の親が不明（ルート直下等で parentId 無し）なら戻せない。他の失敗パスと同様に通知する。
+          if (originalParentId === undefined) {
+            setError('元に戻せませんでした');
+            return;
+          }
+          await bookmarkService.move(id, originalParentId);
+          searchEngine.moveNode(id, originalParentId, originalFolderPath);
+          refresh();
+        } catch (e) {
+          console.error('[useRowActions] 移動のアンドゥに失敗しました:', e);
+          setError('元に戻せませんでした');
+        }
+      });
+    },
+    [refresh, register],
+  );
+
   const clearError = useCallback(() => setError(null), []);
 
-  return { commitEdit, deleteRow, error, clearError };
+  return { commitEdit, deleteRow, moveRow, error, clearError };
 };
