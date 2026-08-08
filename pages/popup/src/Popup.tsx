@@ -1,6 +1,7 @@
 import '@src/Popup.css';
 import { withErrorBoundary } from '@extension/shared';
 import { ErrorDisplay, cn } from '@extension/ui';
+import { BulkActionBar } from '@src/components/BulkActionBar';
 import { DragGhost } from '@src/components/DragGhost';
 import { FolderTree } from '@src/components/FolderTree';
 import { compressPath, findFolderPath } from '@src/components/folderTreeModel';
@@ -28,6 +29,7 @@ import { useDragAndDrop } from '@src/hooks/useDragAndDrop';
 import { useMode } from '@src/hooks/useMode';
 import { useRowActions } from '@src/hooks/useRowActions';
 import { useSearch } from '@src/hooks/useSearch';
+import { useSelection } from '@src/hooks/useSelection';
 import { useUndo } from '@src/hooks/useUndo';
 import { aliasStore, bookmarkService, localStateStore } from '@src/services';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -93,6 +95,19 @@ const Popup = () => {
   const undo = useUndo();
   const rowActions = useRowActions(refresh, undo.register);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // ── U13: 複数選択と一括操作 ── 選択はフォーカス（selectedIndex）・モード・スコープと直交する独立状態。
+  // `mode` と同様に個々の値へ分解する（オブジェクトそのものを依存配列に含めると毎レンダー新規参照になり
+  // 意図せぬ再実行を招くため。`toggle`/`rangeTo`/`selectAll`/`clear` は `useSelection` 内で安定参照）。
+  const {
+    selectedIds,
+    count: selectionCount,
+    toggle: toggleSelection,
+    rangeTo: rangeToSelection,
+    selectAll: selectAllRows,
+    clear: clearSelection,
+  } = useSelection();
+  // フォルダ選択パネルが一括移動用（複数件対象）で開いているか（U13）。単一移動時は false。
+  const [bulkMovePanel, setBulkMovePanel] = useState(false);
 
   // 別名編集（ALIAS_EDIT）の対象行。mode.targetId（node.id）から現在の結果を引く。
   const editingAliasId = mode.mode === 'ALIAS_EDIT' ? mode.targetId : null;
@@ -107,12 +122,22 @@ const Popup = () => {
     setSelectedIndex(0);
   }, [query, scopeFolderId]);
 
+  // クエリ or フォルダ選択が変わったら複数選択（チェック選択）もクリアする（U13）。選択は常に「現在の
+  // 表示結果の部分集合」に保ち、幽霊選択・件数不整合・アンドゥ用退避データの欠落を構造的に避ける。
+  useEffect(() => {
+    clearSelection();
+  }, [query, scopeFolderId, clearSelection]);
+
   // 結果件数が変わったら選択インデックスを範囲内へクランプする。
   useEffect(() => {
     setSelectedIndex(prev => Math.min(Math.max(0, prev), Math.max(0, results.length - 1)));
   }, [results.length]);
 
   const lastIndex = Math.max(0, results.length - 1);
+  // 現在の表示結果の並び順（Ctrl/Cmd+A の全件選択・Shift+クリックの範囲選択の基準・U13）。
+  const orderedIds = useMemo(() => results.map(r => r.node.id), [results]);
+  // 選択中のブックマーク（一括操作の対象・U13）。クエリ/スコープ変更で selection を clear するため常に整合する。
+  const selectedItems = useMemo(() => results.filter(r => selectedIds.has(r.node.id)), [results, selectedIds]);
 
   const openAt = useCallback(
     (index: number) => {
@@ -124,6 +149,26 @@ const Popup = () => {
       bookmarkService.openUrl(url).catch((e: unknown) => console.error('[Popup] ブックマークを開けませんでした:', e));
     },
     [results],
+  );
+
+  // チェックボックス/Ctrl/Cmd+クリックで個別トグル、Shift+クリックで anchor からの範囲選択（U13）。
+  const handleToggleSelect = useCallback(
+    (index: number) => {
+      const id = results[index]?.node.id;
+      if (id) {
+        toggleSelection(id);
+      }
+    },
+    [results, toggleSelection],
+  );
+  const handleRangeSelect = useCallback(
+    (index: number) => {
+      const id = results[index]?.node.id;
+      if (id) {
+        rangeToSelection(id, orderedIds);
+      }
+    },
+    [results, orderedIds, rangeToSelection],
   );
 
   const { enterFolderTree, enterAliasEdit, enterInlineEdit, enterPanel, enterDrag, exitToList } = mode;
@@ -263,6 +308,15 @@ const Popup = () => {
     [results, rowActions],
   );
 
+  // 選択中の全件を一括削除する（1アンドゥ単位・U13）。完了後は選択をクリアする。
+  const handleBulkDelete = useCallback(() => {
+    if (selectedItems.length === 0) {
+      return;
+    }
+    void rowActions.deleteRows(selectedItems);
+    clearSelection();
+  }, [selectedItems, rowActions, clearSelection]);
+
   // インライン編集の対象が結果から消えた場合（検索条件変更等）は穏当に LIST へ戻す。
   useEffect(() => {
     if (mode.mode === 'INLINE_EDIT' && editingInlineItem === null) {
@@ -270,14 +324,21 @@ const Popup = () => {
     }
   }, [mode.mode, editingInlineItem, exitToList]);
 
-  // ── U12: フォルダ移動（MovePanel / ドラッグ&ドロップ） ──
+  // ── U12/U13: フォルダ移動（MovePanel / ドラッグ&ドロップ。複数選択時は一括） ──
 
-  // 移動先フォルダ ID からフルパスを解決して移動する（D&D のドロップから呼ぶ）。
+  // 移動先フォルダ ID からフルパスを解決して移動する（D&D のドロップから呼ぶ）。ドラッグ対象が選択中
+  // （かつ選択が2件以上）なら選択全件をまとめて運ぶ（design 1g・U13）。それ以外は単一行の移動（U12）のまま。
   const performMove = useCallback(
     (item: SearchResultItem, folderId: string) => {
-      void rowActions.moveRow(item, folderId, findFolderPath(folders, folderId));
+      const folderPath = findFolderPath(folders, folderId);
+      if (selectionCount > 1 && selectedIds.has(item.node.id)) {
+        void rowActions.moveRows(selectedItems, folderId, folderPath);
+        clearSelection();
+      } else {
+        void rowActions.moveRow(item, folderId, folderPath);
+      }
     },
-    [folders, rowActions],
+    [folders, rowActions, selectionCount, selectedIds, selectedItems, clearSelection],
   );
 
   // D&D 結線。ドロップ先の自動展開（スプリングロード）は左ペインの命令ハンドル経由（キーボードと同じ経路）。
@@ -287,16 +348,43 @@ const Popup = () => {
     onDrop: performMove,
     springLoad: useCallback((folderId: string) => folderTreeActionsRef.current?.expand(folderId), []),
   });
+  // ドラッグ中のゴースト件数（U13）: 対象が選択中（2件以上）なら選択件数、それ以外は単一（1）。
+  const dragCount = dnd.dragging && selectionCount > 1 && selectedIds.has(dnd.dragging.node.id) ? selectionCount : 1;
 
-  // フォルダ選択パネル（Ctrl+M）の対象行。開いた時点の選択行を対象にする（パネル操作中は選択行が動かない）。
-  const movePanelItem = mode.mode === 'PANEL' ? (results[selectedIndex] ?? null) : null;
+  // フォルダ選択パネル（Ctrl+M）の対象行（単一移動時）。開いた時点の選択行を対象にする（パネル操作中は選択行が動かない）。
+  // 一括移動（`bulkMovePanel`）時は対象未確定のまま `selectedItems` を使うため参照しない。
+  const movePanelItem = mode.mode === 'PANEL' && !bulkMovePanel ? (results[selectedIndex] ?? null) : null;
 
-  // パネル表示中に対象行が消えたら穏当に閉じる（別名/インライン編集と同じパターン）。
+  // パネルを閉じる（Escape / 背景クリック / 確定後）共通処理。一括移動フラグもここで必ず落とす。
+  const closeMovePanel = useCallback(() => {
+    setBulkMovePanel(false);
+    focusSearch();
+  }, [focusSearch]);
+
+  // パネル表示中に対象行が消えたら穏当に閉じる（別名/インライン編集と同じパターン。単一移動のみが対象）。
   useEffect(() => {
-    if (mode.mode === 'PANEL' && movePanelItem === null) {
+    if (mode.mode === 'PANEL' && !bulkMovePanel && movePanelItem === null) {
       exitToList();
     }
-  }, [mode.mode, movePanelItem, exitToList]);
+  }, [mode.mode, bulkMovePanel, movePanelItem, exitToList]);
+
+  // 一括移動パネル表示中に選択が空になったら穏当に閉じる（一括削除等との競合を避ける・U13）。
+  useEffect(() => {
+    if (mode.mode === 'PANEL' && bulkMovePanel && selectionCount === 0) {
+      setBulkMovePanel(false);
+      exitToList();
+    }
+  }, [mode.mode, bulkMovePanel, selectionCount, exitToList]);
+
+  // 選択中の全件を対象に一括移動パネルを開く（U13）。現在の親フォルダの無効化は一括では行わない
+  // （複数件の親がまちまちのため単一の「現在の場所」を定義できない。design.md 参照）。
+  const openBulkMovePanel = useCallback(() => {
+    if (selectedItems.length === 0) {
+      return;
+    }
+    setBulkMovePanel(true);
+    enterPanel();
+  }, [selectedItems.length, enterPanel]);
 
   // パネルでフォルダを確定 → 移動して検索ボックスへ戻る（フルパスは候補が保持している値をそのまま使う）。
   const handleMoveConfirm = useCallback(
@@ -304,9 +392,21 @@ const Popup = () => {
       if (movePanelItem) {
         void rowActions.moveRow(movePanelItem, folderId, folderPath);
       }
-      focusSearch();
+      closeMovePanel();
     },
-    [movePanelItem, rowActions, focusSearch],
+    [movePanelItem, rowActions, closeMovePanel],
+  );
+
+  // 一括移動パネルでフォルダを確定 → 選択全件を移動して選択をクリアする（1アンドゥ単位・U13）。
+  const handleBulkMoveConfirm = useCallback(
+    (folderId: string, folderPath: string[]) => {
+      if (selectedItems.length > 0) {
+        void rowActions.moveRows(selectedItems, folderId, folderPath);
+        clearSelection();
+      }
+      closeMovePanel();
+    },
+    [selectedItems, rowActions, clearSelection, closeMovePanel],
   );
 
   // Escape を1段階ずつ解決する（U8a: 検索ボックスへ戻る → キーワードクリア → フォルダ絞り込み解除 → 閉じる）。
@@ -353,6 +453,14 @@ const Popup = () => {
         return;
       }
 
+      // Escape は選択中（複数選択）があれば最初に選択解除する（既存の段階戻りより前段・U13）。
+      // PANEL/INLINE_EDIT/ALIAS_EDIT/DRAG は自前の Escape 挙動を持つため対象外にする。
+      if (e.key === 'Escape' && selectionCount > 0 && (currentMode === 'LIST' || currentMode === 'FOLDER_TREE')) {
+        e.preventDefault();
+        clearSelection();
+        return;
+      }
+
       if (currentMode === 'LIST') {
         // モード入口/行操作ショートカット（U8・U10）。
         const shortcutIntent = resolveShortcutIntent(e);
@@ -366,16 +474,32 @@ const Popup = () => {
           enterInlineEditAt(selectedIndex);
           return;
         }
-        // Ctrl(Cmd)+M: フォルダ選択パネルを開く（対象は選択行・U12）。
+        // Ctrl(Cmd)+M: フォルダ選択パネルを開く。選択中（複数選択）は一括移動パネルへ（U13）。
         if (shortcutIntent === 'panel' && results.length > 0) {
           e.preventDefault();
-          enterPanel();
+          if (selectionCount > 0) {
+            openBulkMovePanel();
+          } else {
+            enterPanel();
+          }
           return;
         }
         // 検索ボックスにフォーカスがある間の Delete は文字の前方削除のまま（ブックマークを削除しない）。
+        // 選択中（複数選択）は一括削除へ（U13）。
         if (shortcutIntent === 'delete' && listFocus === 'result' && results.length > 0) {
           e.preventDefault();
-          handleDeleteAt(selectedIndex);
+          if (selectionCount > 0) {
+            handleBulkDelete();
+          } else {
+            handleDeleteAt(selectedIndex);
+          }
+          return;
+        }
+        // Ctrl(Cmd)+A: 全件選択（U13）。検索ボックスのネイティブなテキスト全選択を奪わないため、
+        // 検索ボックスにフォーカスがある間（listFocus==='search'）は素通しする。
+        if (shortcutIntent === 'select-all' && listFocus !== 'search' && results.length > 0) {
+          e.preventDefault();
+          selectAllRows(orderedIds);
           return;
         }
         const intent = resolveKey(e, listFocus);
@@ -530,6 +654,12 @@ const Popup = () => {
     results.length,
     undoPending,
     undoLatest,
+    selectionCount,
+    clearSelection,
+    selectAllRows,
+    orderedIds,
+    openBulkMovePanel,
+    handleBulkDelete,
   ]);
 
   // ── U19: 状態の保存と復元 ──
@@ -666,14 +796,24 @@ const Popup = () => {
     <div className="relative">
       <PopupShell
         header={
-          <div className={dimHeaderAndSidebar ? 'opacity-45' : undefined}>
-            <SearchHeader
-              query={query}
-              onQueryChange={handleQueryChange}
-              inputRef={searchInputRef}
-              scopePath={scopePath}
+          // 1件以上選択中はヘッダーを一括操作バーへ差し替える（デザイン状態1f・U13）。
+          selectionCount > 0 ? (
+            <BulkActionBar
+              count={selectionCount}
+              onMove={openBulkMovePanel}
+              onDelete={handleBulkDelete}
+              onClear={clearSelection}
             />
-          </div>
+          ) : (
+            <div className={dimHeaderAndSidebar ? 'opacity-45' : undefined}>
+              <SearchHeader
+                query={query}
+                onQueryChange={handleQueryChange}
+                inputRef={searchInputRef}
+                scopePath={scopePath}
+              />
+            </div>
+          )
         }
         sidebar={
           // アクティブペイン枠（AC-14）: ペインの最外周に重ねる「一番外側の枠」。選択行・スコープ塗りが
@@ -718,6 +858,10 @@ const Popup = () => {
               onCancelEdit={handleCancelEdit}
               onDeleteRow={handleDeleteAt}
               onRowMouseDown={(index, e) => dnd.onRowMouseDown(results[index], e)}
+              selectionActive={selectionCount > 0}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onRangeSelect={handleRangeSelect}
             />
             {currentFocusArea === 'result' && (
               <div
@@ -728,22 +872,25 @@ const Popup = () => {
           </div>
         }
       />
-      {/* フォルダ選択パネル（Ctrl+M・U12）。対象行があるときのみ描画する。 */}
-      {mode.mode === 'PANEL' && movePanelItem && (
+      {/* フォルダ選択パネル（Ctrl+M・U12/U13）。単一移動は対象行、一括移動は選択件数があるときのみ描画する。
+          一括移動は複数の親フォルダにまたがりうるため「現在の場所」を1つに定義できず、無効化は行わない
+          （currentParentId=null。design.md 参照）。 */}
+      {mode.mode === 'PANEL' && (bulkMovePanel ? selectedItems.length > 0 : movePanelItem !== null) && (
         <MovePanel
           folders={folders}
-          currentParentId={movePanelItem.node.parentId ?? null}
-          onConfirm={handleMoveConfirm}
-          onClose={focusSearch}
+          currentParentId={bulkMovePanel ? null : (movePanelItem?.node.parentId ?? null)}
+          onConfirm={bulkMovePanel ? handleBulkMoveConfirm : handleMoveConfirm}
+          onClose={closeMovePanel}
           actionsRef={movePanelActionsRef}
         />
       )}
-      {/* ドラッグ中のゴースト（U12）。カーソル追従の浮遊カード。 */}
+      {/* ドラッグ中のゴースト（U12/U13）。カーソル追従の浮遊カード。選択中の行をまとめてドラッグした場合は
+          件数バッジに選択件数を出す（design 1g）。 */}
       {dnd.dragging && (
         <DragGhost
           title={dnd.dragging.node.title}
           url={dnd.dragging.node.url ?? ''}
-          count={1}
+          count={dragCount}
           x={dnd.ghostPos.x}
           y={dnd.ghostPos.y}
         />

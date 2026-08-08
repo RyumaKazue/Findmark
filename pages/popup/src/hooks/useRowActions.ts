@@ -1,5 +1,7 @@
+import { deleteRowsCore, moveRowsCore, undoDeleteRowsCore, undoMoveRowsCore } from './bulkActionsCore.js';
 import { aliasStore, bookmarkService, searchEngine } from '@src/services';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import type { BulkDeleteTarget, BulkMoveTarget, DeleteDeps, MoveDeps } from './bulkActionsCore.js';
 import type { SearchResultItem } from '@extension/shared';
 import type { CommitPlan } from '@src/components/inlineEditModel';
 
@@ -10,6 +12,16 @@ export interface UseRowActionsApi {
   deleteRow: (item: SearchResultItem) => Promise<void>;
   /** 行を別フォルダへ移動し、5秒の即時アンドゥを登録する（UC-3・U12）。同一親への移動は no-op。 */
   moveRow: (item: SearchResultItem, targetFolderId: string, targetFolderPath: string[]) => Promise<void>;
+  /**
+   * 複数行を一括で別フォルダへ移動し、**1つの**5秒即時アンドゥで全戻しできるようにする（U13）。
+   * 既に対象フォルダにある行は対象から除外する（`moveRow` の同一親 no-op と同じ扱い）。
+   */
+  moveRows: (items: SearchResultItem[], targetFolderId: string, targetFolderPath: string[]) => Promise<void>;
+  /**
+   * 複数行を一括で削除し、**1つの**5秒即時アンドゥで全戻しできるようにする（U13）。
+   * URL の無い行（フォルダ等）は対象から除外する。
+   */
+  deleteRows: (items: SearchResultItem[]) => Promise<void>;
   /** 直近の操作失敗（danger トースト用）。 */
   error: string | null;
   /** エラートーストを閉じる。 */
@@ -157,7 +169,102 @@ export const useRowActions = (
     [refresh, register],
   );
 
+  // 一括移動/削除の中核（対象フィルタ・1件ごとの部分失敗耐性）は `bulkActionsCore`（純粋・DI）に委譲する。
+  // 依存（chrome API ラッパ）をここで束ねる。services.ts のモジュールスコープ単一インスタンス（不変）を
+  // 注入するだけの薄いアダプタのため、`useMemo([])` で1度だけ生成し `moveRows`/`deleteRows` の
+  // `useCallback` を無用に再生成しない（`react-hooks/exhaustive-deps` の指摘どおり安定化する）。
+  const moveDeps = useMemo<MoveDeps>(
+    () => ({
+      move: (id, parentId) => bookmarkService.move(id, parentId),
+      moveNode: (id, parentId, folderPath) => searchEngine.moveNode(id, parentId, folderPath),
+    }),
+    [],
+  );
+  const deleteDeps = useMemo<DeleteDeps>(
+    () => ({
+      remove: id => bookmarkService.remove(id),
+      removeAlias: url => aliasStore.remove(url),
+      removeNode: id => searchEngine.removeNode(id),
+      ensureFolderPath: path => bookmarkService.ensureFolderPath(path),
+      create: data => bookmarkService.create(data),
+      upsertAlias: (url, aliases) => aliasStore.upsert(url, aliases),
+      addNode: (node, folderPath, aliases) => searchEngine.addNode(node, folderPath, aliases),
+    }),
+    [],
+  );
+
+  const moveRows = useCallback(
+    async (items: SearchResultItem[], targetFolderId: string, targetFolderPath: string[]) => {
+      const targets: BulkMoveTarget[] = items.map(item => ({
+        id: item.node.id,
+        parentId: item.node.parentId,
+        folderPath: item.folderPath,
+      }));
+
+      const { moved, anyFailed } = await moveRowsCore(targets, targetFolderId, targetFolderPath, moveDeps);
+
+      if (moved.length > 0) {
+        refresh();
+      }
+      if (anyFailed) {
+        setError('一部の項目を移動できませんでした');
+      }
+      if (moved.length === 0) {
+        return;
+      }
+
+      // 1つの undo で成功した全件を元の親へ戻す（AC-4「一括アンドゥが1回で全戻し」）。
+      // `undoMoveRowsCore` は1件ごとに独立して処理するため、途中の失敗が残りの件の巻き戻しを止めない。
+      register(`${moved.length}件を移動しました`, async () => {
+        const { anyFailed: undoFailed } = await undoMoveRowsCore(moved, moveDeps);
+        refresh();
+        if (undoFailed) {
+          setError('一部を元に戻せませんでした');
+        }
+      });
+    },
+    [refresh, register, moveDeps],
+  );
+
+  const deleteRows = useCallback(
+    async (items: SearchResultItem[]) => {
+      // URL の無い行（フォルダ等。現状の結果には現れないが念のため防御）は対象から除外する。
+      const targets: BulkDeleteTarget[] = items
+        .filter((item): item is SearchResultItem & { node: { url: string } } => Boolean(item.node.url))
+        .map(item => ({
+          id: item.node.id,
+          title: item.node.title,
+          url: item.node.url,
+          folderPath: item.folderPath,
+          aliases: item.aliases,
+        }));
+
+      const { removed, anyFailed } = await deleteRowsCore(targets, deleteDeps);
+
+      if (removed.length > 0) {
+        refresh();
+      }
+      if (anyFailed) {
+        setError('一部の項目を削除できませんでした');
+      }
+      if (removed.length === 0) {
+        return;
+      }
+
+      // 1つの undo で成功した全件を再作成する（AC-4）。`undoDeleteRowsCore` は1件ごとに独立して処理するため、
+      // 途中の失敗が残りの件の再作成を止めない。
+      register(`${removed.length}件を削除しました`, async () => {
+        const { anyFailed: undoFailed } = await undoDeleteRowsCore(removed, deleteDeps);
+        refresh();
+        if (undoFailed) {
+          setError('一部を元に戻せませんでした');
+        }
+      });
+    },
+    [refresh, register, deleteDeps],
+  );
+
   const clearError = useCallback(() => setError(null), []);
 
-  return { commitEdit, deleteRow, moveRow, error, clearError };
+  return { commitEdit, deleteRow, moveRow, moveRows, deleteRows, error, clearError };
 };
