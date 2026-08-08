@@ -36,6 +36,8 @@ interface ResultRowProps {
   onCancelEdit?: () => void;
   /** ホバーの削除アイコンで削除する（アンドゥ付き）。 */
   onDelete?: () => void;
+  /** 行のドラッグ開始候補（mousedown。5px 超で D&D 開始・U12）。編集中の行では渡さない。 */
+  onDragStart?: (e: MouseEvent) => void;
 }
 
 /** 別名チップの最大表示数（docs/design「結果行の共通仕様」）。超過は `+N`。 */
@@ -76,6 +78,7 @@ export const ResultRow = ({
   onCommitEdit,
   onCancelEdit,
   onDelete,
+  onDragStart,
 }: ResultRowProps) => {
   const matched = item.matchedAliases;
   const others = item.aliases.filter(a => !matched.includes(a));
@@ -139,12 +142,23 @@ export const ResultRow = ({
     onOpen();
   };
 
+  // ドラッグ開始は行本体のみ。編集/削除アイコン・別名エリア上の mousedown は既存のクリック分岐を優先する
+  // （それらの領域での微小なブレでドラッグが誤発火しないようにする）。
+  const handleMouseDown = (e: MouseEvent<HTMLButtonElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-row-action], [data-alias-area]')) {
+      return;
+    }
+    onDragStart?.(e);
+  };
+
   return (
     <button
       type="button"
       onClick={handleClick}
       onDoubleClick={onEnterInlineEdit}
       onMouseEnter={onHover}
+      onMouseDown={handleMouseDown}
       title={item.node.title}
       className={cn(
         'border-line-row group flex h-14 w-full flex-none flex-col justify-center gap-[5px] border-b px-4 text-left',

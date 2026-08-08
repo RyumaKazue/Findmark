@@ -375,6 +375,53 @@ describe('SearchEngine — updateNode(リネーム/URL編集の索引即時反�
   });
 });
 
+describe('SearchEngine — moveNode(フォルダ移動の索引即時反映・U12)', () => {
+  it('移動先のフォルダパスが表示に反映される', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // GitHub(id:10) は「ブックマーク バー」直下 → 「ブックマーク バー > 料理」へ移動。
+    expect(engine.search({ keywords: ['github'] })[0].folderPath).toEqual(['ブックマーク バー']);
+
+    engine.moveNode('10', '4', ['ブックマーク バー', '料理']);
+
+    expect(engine.search({ keywords: ['github'] })[0].folderPath).toEqual(['ブックマーク バー', '料理']);
+  });
+
+  it('移動後はスコープ判定が新しい親フォルダで行われる', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // 移動前: 料理(id:4)直下スコープには GitHub は含まれない。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '4' } }).some(r => r.node.id === '10')).toBe(false);
+
+    engine.moveNode('10', '4', ['ブックマーク バー', '料理']);
+
+    // 移動後: 料理(id:4)直下スコープに現れ、元の親(id:1)直下からは外れる。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '4' } }).some(r => r.node.id === '10')).toBe(true);
+    expect(engine.search({ keywords: [], folderScope: { folderId: '1' } }).some(r => r.node.id === '10')).toBe(false);
+  });
+
+  it('移動しても別名は引き継がれる(URLハッシュ紐付けのため不変)', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.moveNode('10', '4', ['ブックマーク バー', '料理']);
+    expect(engine.search({ keywords: ['ぎっと'] }).map(r => r.node.id)).toEqual(['10']);
+  });
+
+  it('移動後は新しいフォルダ名でも照合できる(nFolders が更新される)', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // 移動前: 「料理」フォルダ名では GitHub はヒットしない。
+    expect(engine.search({ keywords: ['料理'] }).some(r => r.node.id === '10')).toBe(false);
+
+    engine.moveNode('10', '4', ['ブックマーク バー', '料理']);
+
+    // 移動後: フォルダ名「料理」で GitHub がヒットする（nFolders が更新されている）。
+    expect(engine.search({ keywords: ['料理'] }).some(r => r.node.id === '10')).toBe(true);
+  });
+
+  it('存在しないIDを指定しても索引を壊さず既存エントリは無傷', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    engine.moveNode('does-not-exist', '4', ['ブックマーク バー', '料理']);
+    expect(engine.search({ keywords: ['github'] })[0].folderPath).toEqual(['ブックマーク バー']);
+  });
+});
+
 describe('SearchEngine — removeNode(削除の索引即時反映・U10)', () => {
   it('対象が検索結果・ブラウズ結果の両方から消える', async () => {
     const engine = await buildEngine(mainTree, mainAliases);

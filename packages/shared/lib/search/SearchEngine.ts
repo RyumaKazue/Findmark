@@ -183,6 +183,25 @@ export class SearchEngine {
     }
   }
 
+  /**
+   * 索引上のエントリの所属フォルダを更新する(同期・U12)。フォルダ移動の結果を索引の全再構築なしに
+   * 反映するために使う。`id` が一致するエントリが無ければ何もしない。
+   *
+   * `parentId`(スコープ判定 `inScope` が参照)と `folderPath`/`nFolders`(表示・フォルダ名照合)を
+   * 差し替える。別名は URL 正規化ハッシュに紐付くため移動では不変(`aliases`/`nAliases` は触らない)。
+   * これにより移動後に再検索すると、フォルダパス表示が更新され、スコープ判定も新しい親で行われる
+   * (移動しても結果から人為的に消さず、パス表示だけ更新する = PRD 機能7)。
+   */
+  moveNode(id: string, parentId: string, folderPath: string[]): void {
+    const entry = this.entries.find(e => e.node.id === id);
+    if (!entry) {
+      return;
+    }
+    entry.node = { ...entry.node, parentId };
+    entry.folderPath = folderPath;
+    entry.nFolders = folderPath.map(f => this.normalizer.normalizeText(f));
+  }
+
   /** 索引上のエントリを削除する(同期・U10)。`id` が一致するエントリが無ければ何もしない。 */
   removeNode(id: string): void {
     const index = this.entries.findIndex(e => e.node.id === id);

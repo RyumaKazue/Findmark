@@ -14,6 +14,8 @@ interface FolderTreeItemProps {
   focused: boolean;
   /** フォルダ行が展開中か。 */
   expanded: boolean;
+  /** D&D のドロップ先候補として破線ハイライトするか（U12）。フォルダ行のみ有効。 */
+  dropTarget?: boolean;
   /** 展開/折りたたみ（三角ボタン）。子なしフォルダでは呼ばれない。 */
   onToggleExpand: () => void;
   /** スコープ選択（フォルダ名・「すべて」のクリック）。 */
@@ -55,6 +57,7 @@ export const FolderTreeItem = ({
   paneFocused,
   focused,
   expanded,
+  dropTarget = false,
   onToggleExpand,
   onSelectScope,
   onRevealMore,
@@ -145,11 +148,12 @@ export const FolderTreeItem = ({
       ) : (
         <span aria-hidden="true" className="size-5 flex-none" />
       )}
-      {/* スコープ選択（子なしフォルダも押下可）。 */}
+      {/* スコープ選択（子なしフォルダも押下可）。data-folder-id は D&D のドロップ先判定（elementFromPoint）用。 */}
       <button
         type="button"
         aria-current={scoped ? 'true' : undefined}
         title={folder.title}
+        data-folder-id={folder.id}
         onMouseDown={preventFocusSteal}
         onClick={onSelectScope}
         className={cn(
@@ -157,6 +161,8 @@ export const FolderTreeItem = ({
           scopedStrong && 'bg-accent font-bold text-white',
           scopedMuted && 'bg-accent-bg text-accent-strong font-bold',
           !scoped && 'text-ink-2 hover:bg-accent-bg',
+          // D&D ドロップ先候補（AC-2/AC-3）: 破線でハイライト。outline はレイアウトに影響しない。
+          dropTarget && 'outline-accent outline-dashed outline-2 -outline-offset-2',
         )}>
         <span aria-hidden="true" className="text-[15px]">
           {hasChildren && expanded ? '📂' : '📁'}

@@ -3,6 +3,7 @@ import { computeWindow } from './virtualization.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CommitPlan } from './inlineEditModel.js';
 import type { SearchResultItem } from '@extension/shared';
+import type { MouseEvent } from 'react';
 
 /** 結果行の固定高さ（docs/design「固定寸法」56px）。仮想スクロールの前提。 */
 const ROW_HEIGHT = 56;
@@ -48,6 +49,8 @@ interface ResultListProps {
   onCancelEdit?: () => void;
   /** 指定インデックスの行を削除する。 */
   onDeleteRow?: (index: number) => void;
+  /** 指定インデックスの行でドラッグを開始する候補（mousedown・U12）。 */
+  onRowMouseDown?: (index: number, e: MouseEvent) => void;
 }
 
 /**
@@ -76,6 +79,7 @@ export const ResultList = ({
   onCommitEdit,
   onCancelEdit,
   onDeleteRow,
+  onRowMouseDown,
 }: ResultListProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -163,6 +167,7 @@ export const ResultList = ({
                     onCommitEdit={onCommitEdit}
                     onCancelEdit={onCancelEdit}
                     onDelete={onDeleteRow ? () => onDeleteRow(index) : undefined}
+                    onDragStart={onRowMouseDown ? e => onRowMouseDown(index, e) : undefined}
                   />
                 );
               })}

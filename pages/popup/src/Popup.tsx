@@ -1,8 +1,10 @@
 import '@src/Popup.css';
 import { withErrorBoundary } from '@extension/shared';
 import { ErrorDisplay, cn } from '@extension/ui';
+import { DragGhost } from '@src/components/DragGhost';
 import { FolderTree } from '@src/components/FolderTree';
 import { compressPath, findFolderPath } from '@src/components/folderTreeModel';
+import { MovePanel } from '@src/components/MovePanel';
 import { PopupShell } from '@src/components/PopupShell';
 import { ResultList } from '@src/components/ResultList';
 import { buildResultMetaLabel } from '@src/components/resultMetaModel';
@@ -22,12 +24,14 @@ import {
   resolveRestoredScope,
   sessionsEqual,
 } from '@src/hooks/sessionModel';
+import { useDragAndDrop } from '@src/hooks/useDragAndDrop';
 import { useMode } from '@src/hooks/useMode';
 import { useRowActions } from '@src/hooks/useRowActions';
 import { useSearch } from '@src/hooks/useSearch';
 import { useUndo } from '@src/hooks/useUndo';
 import { aliasStore, bookmarkService, localStateStore } from '@src/services';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { SearchResultItem } from '@extension/shared';
 import type { PopupSession } from '@extension/storage';
 import type { FolderTreeActions } from '@src/components/FolderTree';
 import type { FolderTreeNode } from '@src/components/folderTreeModel';
@@ -119,7 +123,7 @@ const Popup = () => {
     [results],
   );
 
-  const { enterFolderTree, enterAliasEdit, enterInlineEdit, exitToList } = mode;
+  const { enterFolderTree, enterAliasEdit, enterInlineEdit, enterPanel, enterDrag, exitToList } = mode;
 
   // 検索ボックスへフォーカスを戻す（FOLDER_TREE からの復帰も兼ねる）。検索ファースト復帰・Escape の
   // 1段目・別名編集終了などから共通で呼ばれる（U8a）。
@@ -263,6 +267,45 @@ const Popup = () => {
     }
   }, [mode.mode, editingInlineItem, exitToList]);
 
+  // ── U12: フォルダ移動（MovePanel / ドラッグ&ドロップ） ──
+
+  // 移動先フォルダ ID からフルパスを解決して移動する（D&D のドロップから呼ぶ）。
+  const performMove = useCallback(
+    (item: SearchResultItem, folderId: string) => {
+      void rowActions.moveRow(item, folderId, findFolderPath(folders, folderId));
+    },
+    [folders, rowActions],
+  );
+
+  // D&D 結線。ドロップ先の自動展開（スプリングロード）は左ペインの命令ハンドル経由（キーボードと同じ経路）。
+  const dnd = useDragAndDrop({
+    enterDrag,
+    exitToList,
+    onDrop: performMove,
+    springLoad: useCallback((folderId: string) => folderTreeActionsRef.current?.expand(folderId), []),
+  });
+
+  // フォルダ選択パネル（Ctrl+M）の対象行。開いた時点の選択行を対象にする（パネル操作中は選択行が動かない）。
+  const movePanelItem = mode.mode === 'PANEL' ? (results[selectedIndex] ?? null) : null;
+
+  // パネル表示中に対象行が消えたら穏当に閉じる（別名/インライン編集と同じパターン）。
+  useEffect(() => {
+    if (mode.mode === 'PANEL' && movePanelItem === null) {
+      exitToList();
+    }
+  }, [mode.mode, movePanelItem, exitToList]);
+
+  // パネルでフォルダを確定 → 移動して検索ボックスへ戻る（フルパスは候補が保持している値をそのまま使う）。
+  const handleMoveConfirm = useCallback(
+    (folderId: string, folderPath: string[]) => {
+      if (movePanelItem) {
+        void rowActions.moveRow(movePanelItem, folderId, folderPath);
+      }
+      focusSearch();
+    },
+    [movePanelItem, rowActions, focusSearch],
+  );
+
   // Escape を1段階ずつ解決する（U8a: 検索ボックスへ戻る → キーワードクリア → フォルダ絞り込み解除 → 閉じる）。
   const currentFocusArea = toFocusArea(mode.mode, listFocus);
   const handleEscapeStep = useCallback(() => {
@@ -318,6 +361,12 @@ const Popup = () => {
         if (shortcutIntent === 'inline-edit' && results.length > 0) {
           e.preventDefault();
           enterInlineEditAt(selectedIndex);
+          return;
+        }
+        // Ctrl(Cmd)+M: フォルダ選択パネルを開く（対象は選択行・U12）。
+        if (shortcutIntent === 'panel' && results.length > 0) {
+          e.preventDefault();
+          enterPanel();
           return;
         }
         // 検索ボックスにフォーカスがある間の Delete は文字の前方削除のまま（ブックマークを削除しない）。
@@ -438,6 +487,7 @@ const Popup = () => {
     enterInlineEditAt,
     handleDeleteAt,
     enterFolderTree,
+    enterPanel,
     exitToList,
     leaveSearch,
     focusSearch,
@@ -601,6 +651,7 @@ const Popup = () => {
               onActivate={enterFolderTree}
               onFoldersLoaded={handleFoldersLoaded}
               actionsRef={folderTreeActionsRef}
+              dropTargetId={dnd.dropTargetId}
               ready={hasRestored}
             />
             {currentFocusArea === 'folderTree' && (
@@ -630,6 +681,7 @@ const Popup = () => {
               onCommitEdit={handleCommitEdit}
               onCancelEdit={handleCancelEdit}
               onDeleteRow={handleDeleteAt}
+              onRowMouseDown={(index, e) => dnd.onRowMouseDown(results[index], e)}
             />
             {currentFocusArea === 'result' && (
               <div
@@ -640,6 +692,25 @@ const Popup = () => {
           </div>
         }
       />
+      {/* フォルダ選択パネル（Ctrl+M・U12）。対象行があるときのみ描画する。 */}
+      {mode.mode === 'PANEL' && movePanelItem && (
+        <MovePanel
+          folders={folders}
+          currentParentId={movePanelItem.node.parentId ?? null}
+          onConfirm={handleMoveConfirm}
+          onClose={focusSearch}
+        />
+      )}
+      {/* ドラッグ中のゴースト（U12）。カーソル追従の浮遊カード。 */}
+      {dnd.dragging && (
+        <DragGhost
+          title={dnd.dragging.node.title}
+          url={dnd.dragging.node.url ?? ''}
+          count={1}
+          x={dnd.ghostPos.x}
+          y={dnd.ghostPos.y}
+        />
+      )}
       {undo.pending ? (
         <Toast message={undo.pending.label} actionLabel="元に戻す" onAction={undoLatest} onDismiss={undo.dismiss} />
       ) : rowActions.error ? (

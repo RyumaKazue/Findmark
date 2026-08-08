@@ -254,7 +254,7 @@ graph TD
 | U8a | focus-three-state | 1, 6 | ✅ 完了 (2026-07-28) | `.steering/20260728-focus-three-state/` |
 | U10 | inline-edit-delete-undo | 4 | ✅ 完了 (2026-07-28) | `.steering/20260728-inline-edit-delete-undo/` |
 | U11 | folder-scope-tree | 5 | ✅ 完了 (2026-08-07) | `.steering/20260728-folder-scope-tree/` |
-| U12 | folder-move-dnd | 7 | 未着手 | - |
+| U12 | folder-move-dnd | 7 | ✅ 完了 (2026-08-08) | `.steering/20260808-folder-move-dnd/` |
 | U13 | multi-select-bulk | 8 | 未着手 | - |
 | U14 | add-current-page | 9 | 未着手 | - |
 | U15 | import-export | 11 | 未着手 | - |
