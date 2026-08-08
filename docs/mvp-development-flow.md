@@ -256,7 +256,7 @@ graph TD
 | U11 | folder-scope-tree | 5 | ✅ 完了 (2026-08-07) | `.steering/20260728-folder-scope-tree/` |
 | U12 | folder-move-dnd | 7 | ✅ 完了 (2026-08-08) | `.steering/20260808-folder-move-dnd/` |
 | U13 | multi-select-bulk | 8 | ✅ 完了 (2026-08-08) | `.steering/20260808-multi-select-bulk/` |
-| U14 | add-current-page | 9 | 未着手 | - |
+| U14 | add-current-page | 9 | ✅ 完了 (2026-08-08) | `.steering/20260808-add-current-page/` |
 | U15 | import-export | 11 | 未着手 | - |
 | U16 | trash | 12 | 未着手 | - |
 | U17 | service-worker | 前提(1,信頼性) | 未着手 | - |

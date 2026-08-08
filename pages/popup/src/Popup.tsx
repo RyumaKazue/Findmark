@@ -1,6 +1,7 @@
 import '@src/Popup.css';
 import { withErrorBoundary } from '@extension/shared';
 import { ErrorDisplay, cn } from '@extension/ui';
+import { AddCurrentPanel } from '@src/components/AddCurrentPanel';
 import { BulkActionBar } from '@src/components/BulkActionBar';
 import { DragGhost } from '@src/components/DragGhost';
 import { FolderTree } from '@src/components/FolderTree';
@@ -25,6 +26,7 @@ import {
   resolveRestoredScope,
   sessionsEqual,
 } from '@src/hooks/sessionModel';
+import { useAddCurrent } from '@src/hooks/useAddCurrent';
 import { useDragAndDrop } from '@src/hooks/useDragAndDrop';
 import { useMode } from '@src/hooks/useMode';
 import { useRowActions } from '@src/hooks/useRowActions';
@@ -35,6 +37,7 @@ import { aliasStore, bookmarkService, localStateStore } from '@src/services';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SearchResultItem } from '@extension/shared';
 import type { PopupSession } from '@extension/storage';
+import type { AddCurrentPanelActions } from '@src/components/AddCurrentPanel';
 import type { FolderTreeActions } from '@src/components/FolderTree';
 import type { FolderTreeNode } from '@src/components/folderTreeModel';
 import type { CommitPlan } from '@src/components/inlineEditModel';
@@ -108,6 +111,11 @@ const Popup = () => {
   } = useSelection();
   // フォルダ選択パネルが一括移動用（複数件対象）で開いているか（U13）。単一移動時は false。
   const [bulkMovePanel, setBulkMovePanel] = useState(false);
+  // ── U14: 現在ページ登録 ── フォルダ選択パネルとは別の PANEL 用途（bulkMovePanel と同型のフラグ方式）。
+  const [addCurrentPanelOpen, setAddCurrentPanelOpen] = useState(false);
+  // 現在ページ登録パネルのキーボードインテント実行体（AddCurrentPanel が公開）。
+  const addCurrentActionsRef = useRef<AddCurrentPanelActions | null>(null);
+  const addCurrent = useAddCurrent(folders, refresh, rowActions);
 
   // 別名編集（ALIAS_EDIT）の対象行。mode.targetId（node.id）から現在の結果を引く。
   const editingAliasId = mode.mode === 'ALIAS_EDIT' ? mode.targetId : null;
@@ -353,7 +361,9 @@ const Popup = () => {
 
   // フォルダ選択パネル（Ctrl+M）の対象行（単一移動時）。開いた時点の選択行を対象にする（パネル操作中は選択行が動かない）。
   // 一括移動（`bulkMovePanel`）時は対象未確定のまま `selectedItems` を使うため参照しない。
-  const movePanelItem = mode.mode === 'PANEL' && !bulkMovePanel ? (results[selectedIndex] ?? null) : null;
+  // addCurrentPanelOpen（U14）時は MovePanel 用の対象行を持たない（PANEL モードを共用するため排他にする）。
+  const movePanelItem =
+    mode.mode === 'PANEL' && !bulkMovePanel && !addCurrentPanelOpen ? (results[selectedIndex] ?? null) : null;
 
   // パネルを閉じる（Escape / 背景クリック / 確定後）共通処理。一括移動フラグもここで必ず落とす。
   const closeMovePanel = useCallback(() => {
@@ -361,12 +371,13 @@ const Popup = () => {
     focusSearch();
   }, [focusSearch]);
 
-  // パネル表示中に対象行が消えたら穏当に閉じる（別名/インライン編集と同じパターン。単一移動のみが対象）。
+  // パネル表示中に対象行が消えたら穏当に閉じる（別名/インライン編集と同じパターン。単一移動のみが対象。
+  // bulkMovePanel/addCurrentPanelOpen 中はこの効果の対象外にする＝PANEL モード共用時の排他を保つ）。
   useEffect(() => {
-    if (mode.mode === 'PANEL' && !bulkMovePanel && movePanelItem === null) {
+    if (mode.mode === 'PANEL' && !bulkMovePanel && !addCurrentPanelOpen && movePanelItem === null) {
       exitToList();
     }
-  }, [mode.mode, bulkMovePanel, movePanelItem, exitToList]);
+  }, [mode.mode, bulkMovePanel, addCurrentPanelOpen, movePanelItem, exitToList]);
 
   // 一括移動パネル表示中に選択が空になったら穏当に閉じる（一括削除等との競合を避ける・U13）。
   useEffect(() => {
@@ -408,6 +419,48 @@ const Popup = () => {
     },
     [selectedItems, rowActions, clearSelection, closeMovePanel],
   );
+
+  // ── U14: 現在ページ登録（AddCurrentPanel） ──
+
+  // ヘッダー「＋追加」/ Ctrl+D。現在のタブを即時登録（既存なら流用）し、成功時のみパネルを開く
+  // （URL不正等で失敗した場合はエラートーストのみ出し、モードは変えない）。`foldersLoaded` 前は
+  // 保留する（`folders` が空のままだと `lastUsedFolderId` を「削除済み」と誤判定してしまうため）。
+  const handleOpenAddCurrent = useCallback(async () => {
+    if (!foldersLoaded) {
+      return;
+    }
+    const ok = await addCurrent.open();
+    if (ok) {
+      setAddCurrentPanelOpen(true);
+      enterPanel();
+    }
+  }, [foldersLoaded, addCurrent, enterPanel]);
+
+  // パネルを閉じる（Escape / 背景クリック / [完了]）共通処理。登録自体は取り消さないが、次回 open() が
+  // 新しい entry で確実に上書きするよう、表示用の下書き（entry）はここでリセットする（design.md の
+  // `reset()` 契約どおり）。
+  const closeAddCurrentPanel = useCallback(() => {
+    setAddCurrentPanelOpen(false);
+    addCurrent.reset();
+    focusSearch();
+  }, [addCurrent, focusSearch]);
+
+  // [削除]（取り消し）。5秒アンドゥは rowActions.deleteRow（addCurrent.remove 内部）が担う。
+  // パネルを閉じる後始末は、下の「entry が消えたら閉じる」effect に委ねる（他パネルと同じ「対象消失で穏当に
+  // 閉じる」規律。二重にクローズ処理を書かない）。
+  const handleAddCurrentDelete = useCallback(() => {
+    void addCurrent.remove();
+  }, [addCurrent]);
+
+  // パネル表示中に entry が消えたら穏当に閉じる（[削除]完了後の後始末。movePanelItem と同じパターン）。
+  // `remove()` は成功時に entry を既に null へ落としているため、ここでの reset() 呼び出しは冪等（no-op）。
+  useEffect(() => {
+    if (mode.mode === 'PANEL' && addCurrentPanelOpen && addCurrent.entry === null) {
+      setAddCurrentPanelOpen(false);
+      addCurrent.reset();
+      exitToList();
+    }
+  }, [mode.mode, addCurrentPanelOpen, addCurrent, exitToList]);
 
   // Escape を1段階ずつ解決する（U8a: 検索ボックスへ戻る → キーワードクリア → フォルダ絞り込み解除 → 閉じる）。
   const currentFocusArea = toFocusArea(mode.mode, listFocus);
@@ -502,6 +555,12 @@ const Popup = () => {
           selectAllRows(orderedIds);
           return;
         }
+        // Ctrl(Cmd)+D: 現在のページを登録する（U14）。対象行を問わない操作のため results.length に依存しない。
+        if (shortcutIntent === 'add-current') {
+          e.preventDefault();
+          void handleOpenAddCurrent();
+          return;
+        }
         const intent = resolveKey(e, listFocus);
         switch (intent) {
           case 'list:leave-search-up':
@@ -575,6 +634,17 @@ const Popup = () => {
             break;
         }
       } else if (currentMode === 'PANEL') {
+        // U14: 現在ページ登録パネルは MovePanel とは異なるフィールド構成（フォーム）を持つため、
+        // Escape（=パネルを閉じる）のみを document レベルで処理する。他のキー（Tab・矢印・文字入力）は
+        // 各フィールドが自己完結して処理する（AddCurrentPanel 内の絞り込み入力は stopPropagation 済み）。
+        if (addCurrentPanelOpen) {
+          const addCurrentIntent = resolveKey(e, listFocus);
+          if (addCurrentIntent === 'panel:close') {
+            e.preventDefault();
+            addCurrentActionsRef.current?.close();
+          }
+          return;
+        }
         // フォルダ選択パネルのキー操作を document レベルで一元処理する（U12）。DOM フォーカスが背景の結果行
         // ボタン等にあっても Enter が確定として働き、背景のブックマークを誤って開かない（FolderTree と同方式）。
         const actions = movePanelActionsRef.current;
@@ -660,6 +730,8 @@ const Popup = () => {
     orderedIds,
     openBulkMovePanel,
     handleBulkDelete,
+    addCurrentPanelOpen,
+    handleOpenAddCurrent,
   ]);
 
   // ── U19: 状態の保存と復元 ──
@@ -811,6 +883,7 @@ const Popup = () => {
                 onQueryChange={handleQueryChange}
                 inputRef={searchInputRef}
                 scopePath={scopePath}
+                onAddCurrent={() => void handleOpenAddCurrent()}
               />
             </div>
           )
@@ -874,14 +947,30 @@ const Popup = () => {
       />
       {/* フォルダ選択パネル（Ctrl+M・U12/U13）。単一移動は対象行、一括移動は選択件数があるときのみ描画する。
           一括移動は複数の親フォルダにまたがりうるため「現在の場所」を1つに定義できず、無効化は行わない
-          （currentParentId=null。design.md 参照）。 */}
-      {mode.mode === 'PANEL' && (bulkMovePanel ? selectedItems.length > 0 : movePanelItem !== null) && (
-        <MovePanel
+          （currentParentId=null。design.md 参照）。addCurrentPanelOpen 中は排他にする（PANEL モード共用・U14）。 */}
+      {mode.mode === 'PANEL' &&
+        !addCurrentPanelOpen &&
+        (bulkMovePanel ? selectedItems.length > 0 : movePanelItem !== null) && (
+          <MovePanel
+            folders={folders}
+            currentParentId={bulkMovePanel ? null : (movePanelItem?.node.parentId ?? null)}
+            onConfirm={bulkMovePanel ? handleBulkMoveConfirm : handleMoveConfirm}
+            onClose={closeMovePanel}
+            actionsRef={movePanelActionsRef}
+          />
+        )}
+      {/* 現在ページ登録パネル（Ctrl+D・U14）。entry があるときのみ描画する（他パネルと同じ「対象が消えたら
+          描画しない」規律）。 */}
+      {mode.mode === 'PANEL' && addCurrentPanelOpen && addCurrent.entry !== null && (
+        <AddCurrentPanel
+          entry={addCurrent.entry}
           folders={folders}
-          currentParentId={bulkMovePanel ? null : (movePanelItem?.node.parentId ?? null)}
-          onConfirm={bulkMovePanel ? handleBulkMoveConfirm : handleMoveConfirm}
-          onClose={closeMovePanel}
-          actionsRef={movePanelActionsRef}
+          onTitleChange={title => void addCurrent.updateTitle(title)}
+          onFolderChange={(folderId, folderPath) => void addCurrent.updateFolder(folderId, folderPath)}
+          onAliasesChange={addCurrent.updateAliases}
+          onDelete={handleAddCurrentDelete}
+          onClose={closeAddCurrentPanel}
+          actionsRef={addCurrentActionsRef}
         />
       )}
       {/* ドラッグ中のゴースト（U12/U13）。カーソル追従の浮遊カード。選択中の行をまとめてドラッグした場合は
@@ -899,6 +988,8 @@ const Popup = () => {
         <Toast message={undo.pending.label} actionLabel="元に戻す" onAction={undoLatest} onDismiss={undo.dismiss} />
       ) : rowActions.error ? (
         <Toast message={rowActions.error} onDismiss={rowActions.clearError} tone="danger" />
+      ) : addCurrent.error ? (
+        <Toast message={addCurrent.error} onDismiss={addCurrent.clearError} tone="danger" />
       ) : null}
     </div>
   );

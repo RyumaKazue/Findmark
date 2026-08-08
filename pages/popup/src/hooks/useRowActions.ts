@@ -6,12 +6,16 @@ import type { SearchResultItem } from '@extension/shared';
 import type { CommitPlan } from '@src/components/inlineEditModel';
 
 export interface UseRowActionsApi {
-  /** インライン編集の確定内容を反映する（`planCommit` の `update`/`unchanged` のみを渡す）。 */
-  commitEdit: (item: SearchResultItem, plan: CommitPlan) => Promise<void>;
-  /** 行を削除し、5秒の即時アンドゥを登録する（UC-5 の第1層）。 */
-  deleteRow: (item: SearchResultItem) => Promise<void>;
-  /** 行を別フォルダへ移動し、5秒の即時アンドゥを登録する（UC-3・U12）。同一親への移動は no-op。 */
-  moveRow: (item: SearchResultItem, targetFolderId: string, targetFolderPath: string[]) => Promise<void>;
+  /**
+   * インライン編集の確定内容を反映する（`planCommit` の `update`/`unchanged` のみを渡す）。
+   * 戻り値は成功したか（no-op も成功扱い）。失敗時は `false` を返し、呼び出し側は楽観的な状態更新を
+   * 行わないようにする（U14 で `useAddCurrent` が実データとの乖離を防ぐために利用する）。
+   */
+  commitEdit: (item: SearchResultItem, plan: CommitPlan) => Promise<boolean>;
+  /** 行を削除し、5秒の即時アンドゥを登録する（UC-5 の第1層）。戻り値は成功したか。 */
+  deleteRow: (item: SearchResultItem) => Promise<boolean>;
+  /** 行を別フォルダへ移動し、5秒の即時アンドゥを登録する（UC-3・U12）。同一親への移動は no-op（成功扱い）。戻り値は成功したか。 */
+  moveRow: (item: SearchResultItem, targetFolderId: string, targetFolderPath: string[]) => Promise<boolean>;
   /**
    * 複数行を一括で別フォルダへ移動し、**1つの**5秒即時アンドゥで全戻しできるようにする（U13）。
    * 既に対象フォルダにある行は対象から除外する（`moveRow` の同一親 no-op と同じ扱い）。
@@ -48,7 +52,7 @@ export const useRowActions = (
   const commitEdit = useCallback(
     async (item: SearchResultItem, plan: CommitPlan) => {
       if (plan.type !== 'update') {
-        return;
+        return true;
       }
       const { id, url: originalUrl } = item.node;
       try {
@@ -72,9 +76,11 @@ export const useRowActions = (
           }
         }
         refresh();
+        return true;
       } catch (e) {
         console.error('[useRowActions] 編集の保存に失敗しました:', e);
         setError('編集内容を保存できませんでした');
+        return false;
       }
     },
     [refresh],
@@ -84,7 +90,7 @@ export const useRowActions = (
     async (item: SearchResultItem) => {
       const { id, title, url } = item.node;
       if (!url) {
-        return;
+        return true;
       }
       // 復元に必要な情報を削除前に索引から退避する（UC-5「元パス取得・別名退避」）。
       // ※U16（ゴミ箱）はこの直後に TrashStore.push(...) を差し込むだけで2層防御になる。
@@ -96,7 +102,7 @@ export const useRowActions = (
       } catch (e) {
         console.error('[useRowActions] 削除に失敗しました:', e);
         setError('削除できませんでした');
-        return;
+        return false;
       }
 
       try {
@@ -124,6 +130,7 @@ export const useRowActions = (
           setError('元に戻せませんでした');
         }
       });
+      return true;
     },
     [refresh, register],
   );
@@ -133,9 +140,9 @@ export const useRowActions = (
       const { id, title } = item.node;
       const originalParentId = item.node.parentId;
       const originalFolderPath = item.folderPath;
-      // 同じ親への移動は無意味なため何もしない（アンドゥも登録しない）。
+      // 同じ親への移動は無意味なため何もしない（アンドゥも登録しない・成功扱い）。
       if (originalParentId === targetFolderId) {
-        return;
+        return true;
       }
 
       try {
@@ -144,7 +151,7 @@ export const useRowActions = (
       } catch (e) {
         console.error('[useRowActions] 移動に失敗しました:', e);
         setError('移動できませんでした');
-        return;
+        return false;
       }
 
       searchEngine.moveNode(id, targetFolderId, targetFolderPath);
@@ -165,6 +172,7 @@ export const useRowActions = (
           setError('元に戻せませんでした');
         }
       });
+      return true;
     },
     [refresh, register],
   );

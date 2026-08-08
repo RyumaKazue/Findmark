@@ -260,6 +260,7 @@ describe('resolveShortcutIntent', () => {
     expect(resolveShortcutIntent({ key: 'e' })).toBeNull();
     expect(resolveShortcutIntent({ key: 'm' })).toBeNull();
     expect(resolveShortcutIntent({ key: 'a' })).toBeNull();
+    expect(resolveShortcutIntent({ key: 'd' })).toBeNull();
     expect(resolveShortcutIntent({ key: 'e', ctrlKey: true, altKey: true })).toBeNull();
   });
 
@@ -291,5 +292,14 @@ describe('resolveShortcutIntent', () => {
 
   it('Ctrl(⌘)+Shift+A は select-all にしない', () => {
     expect(resolveShortcutIntent({ key: 'a', ctrlKey: true, shiftKey: true })).toBeNull();
+  });
+
+  it('Ctrl(⌘)+D → add-current（U14）', () => {
+    expect(resolveShortcutIntent({ key: 'd', ctrlKey: true })).toBe('add-current');
+    expect(resolveShortcutIntent({ key: 'D', metaKey: true })).toBe('add-current');
+  });
+
+  it('Ctrl(⌘)+Shift+D は add-current にしない', () => {
+    expect(resolveShortcutIntent({ key: 'd', ctrlKey: true, shiftKey: true })).toBeNull();
   });
 });
