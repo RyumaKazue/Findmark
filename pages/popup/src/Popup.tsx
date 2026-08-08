@@ -15,16 +15,27 @@ import {
   resolveShortcutIntent,
   toFocusArea,
 } from '@src/hooks/modeMachine';
+import {
+  DEFAULT_SESSION,
+  deriveSession,
+  resolveRestoredIndex,
+  resolveRestoredScope,
+  sessionsEqual,
+} from '@src/hooks/sessionModel';
 import { useMode } from '@src/hooks/useMode';
 import { useRowActions } from '@src/hooks/useRowActions';
 import { useSearch } from '@src/hooks/useSearch';
 import { useUndo } from '@src/hooks/useUndo';
-import { aliasStore, bookmarkService } from '@src/services';
+import { aliasStore, bookmarkService, localStateStore } from '@src/services';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PopupSession } from '@extension/storage';
 import type { FolderTreeActions } from '@src/components/FolderTree';
 import type { FolderTreeNode } from '@src/components/folderTreeModel';
 import type { CommitPlan } from '@src/components/inlineEditModel';
-import type { ListFocus } from '@src/hooks/modeMachine';
+import type { FocusArea, ListFocus } from '@src/hooks/modeMachine';
+
+/** セッション保存の debounce（検索の 120ms より長くし、復元の選択解決が保存より先に走るようにする）。 */
+const SESSION_SAVE_DEBOUNCE_MS = 200;
 
 /**
  * 検索ポップアップのルート（U7 の3領域シェル + U8 のモード状態機械 + U8a のフォーカス3状態）。
@@ -52,9 +63,26 @@ const Popup = () => {
   const [listFocus, setListFocus] = useState<ListFocus>('search');
   // 左ペインのキーボードインテント実行体（FolderTree が公開）。
   const folderTreeActionsRef = useRef<FolderTreeActions | null>(null);
-  const { results, isIndexReady, updateAliases, refresh } = useSearch(query, scopeFolderId);
+  const { results, isIndexReady, isSettled, updateAliases, refresh } = useSearch(query, scopeFolderId);
   // U11: 起動時の既定フォーカスを左ペインにする。
   const mode = useMode('FOLDER_TREE');
+  // ── U19: ポップアップ状態の復元 ──
+  // 読み込んだセッション（未取得/失敗時は既定値）。復元適用の1回だけ参照するため ref で持つ。
+  const sessionRef = useRef<PopupSession>(DEFAULT_SESSION);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  // フォルダツリー取得完了（スコープの存在検証を復元前に済ませるためのゲート）。
+  const [foldersLoaded, setFoldersLoaded] = useState(false);
+  // 復元適用済みフラグ（保存 effect の解禁も兼ねる。復元前に既定値でセッションを潰さない）。
+  const [hasRestored, setHasRestored] = useState(false);
+  // 復元した選択ブックマーク ID の保留（索引・クエリが復元後結果を反映してから index へ解決する）。null = 保留なし。
+  const [pendingSelectId, setPendingSelectId] = useState<string | null>(null);
+  // 復元クエリが残った状態で検索ファースト復帰したとき、既存クエリを全選択して次入力で置き換えるための保留（AC-11）。
+  const restoredQuerySelectPendingRef = useRef(false);
+  // 直近保存したセッション（無用な再書き込み・liveUpdate 通知を避ける等値比較用）。
+  const lastSavedSessionRef = useRef<PopupSession | null>(null);
+  // 現在の UI 状態から導出したセッションのスナップショット（pagehide フラッシュ用。毎レンダー更新）。
+  // 閉じる直前の変更が debounce 待ちのまま失われるのを防ぐため、閉包の stale 値ではなく ref 越しに最新を読む。
+  const sessionSnapshotRef = useRef<{ savable: boolean; session: PopupSession } | null>(null);
   const undo = useUndo();
   const rowActions = useRowActions(refresh, undo.register);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +139,38 @@ const Popup = () => {
     },
     [lastIndex],
   );
+
+  // U19: 復元したフォーカス位置を実際のモード/DOM フォーカスへ適用する。既定モードは FOLDER_TREE のため
+  // 'folderTree' は通常現状維持（FolderTree の focused effect が DOM フォーカスを担う）。
+  const applyFocusArea = useCallback(
+    (area: FocusArea) => {
+      if (area === 'folderTree') {
+        enterFolderTree(); // 既に FOLDER_TREE なら reducer 側で no-op
+        return;
+      }
+      exitToList();
+      setListFocus(area);
+      if (area === 'search') {
+        searchInputRef.current?.focus();
+      } else {
+        searchInputRef.current?.blur();
+      }
+    },
+    [enterFolderTree, exitToList],
+  );
+
+  // ユーザーによるクエリ編集。編集した時点で「復元クエリの全選択」保留は消費済みとして落とす（AC-11）。
+  // 復元適用は生の setQuery を使うため、この保留は復元経路では落ちない。
+  const handleQueryChange = useCallback((value: string) => {
+    restoredQuerySelectPendingRef.current = false;
+    setQuery(value);
+  }, []);
+
+  // フォルダツリー取得完了を親でも把握する（スコープの存在検証を復元前に済ませるゲート / U19）。
+  const handleFoldersLoaded = useCallback((loaded: FolderTreeNode[]) => {
+    setFolders(loaded);
+    setFoldersLoaded(true);
+  }, []);
 
   // 別名編集に入る（選択行を対象にする）。対象行を選択インデックスへ合わせ、仮想スクロールで可視化する。
   // 既に別の行を別名編集中でも切り替えられるよう、一旦 LIST へ戻してから入り直す
@@ -357,6 +417,11 @@ const Popup = () => {
         })
       ) {
         focusSearch();
+        // AC-11: 復元クエリが残っていれば全選択し、この印字文字（keydown の既定動作）で置き換わるようにする。
+        if (restoredQuerySelectPendingRef.current) {
+          input.select();
+          restoredQuerySelectPendingRef.current = false;
+        }
       }
     };
     document.addEventListener('keydown', onKeyDown);
@@ -381,6 +446,121 @@ const Popup = () => {
     undoLatest,
   ]);
 
+  // ── U19: 状態の保存と復元 ──
+
+  // 起動時に1回だけ保存済みセッションを読み込む（失敗時は既定値のまま継続 = 入力を阻害しない）。
+  useEffect(() => {
+    let active = true;
+    localStateStore
+      .get()
+      .then(state => {
+        if (active) {
+          sessionRef.current = state.session ?? DEFAULT_SESSION;
+        }
+      })
+      .catch((e: unknown) => console.error('[Popup] セッションの読み込みに失敗しました:', e))
+      .finally(() => {
+        if (active) {
+          setSessionLoaded(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 復元適用（1回のみ）。フォーカス/スコープ/クエリは索引を必要としないため、セッション読込とフォルダ取得が
+  // 揃った時点で即適用する（数ms〜数十ms）。索引構築（~数百ms）を待たないことで、既定状態（左ペインフォーカス＋
+  // スコープ「すべて」）が索引完了まで見えてしまうフラッシュを避ける（AC-10）。選択行の ID→index 解決だけは
+  // 索引・結果が要るため、下の別 effect で `isIndexReady`/`isSettled` を待って行う。
+  useEffect(() => {
+    if (hasRestored || !sessionLoaded || !foldersLoaded) {
+      return;
+    }
+    const session = sessionRef.current;
+    // スコープ: 保存フォルダが現存しなければ「すべて」へフォールバック（AC-5）。focusArea はこの結果に影響されない。
+    const scopeExists = session.scopeFolderId !== null && findFolderPath(folders, session.scopeFolderId).length > 0;
+    setScopeFolderId(resolveRestoredScope(session.scopeFolderId, scopeExists));
+    setQuery(session.query); // 生の setQuery（復元経路は全選択保留を落とさない）
+    applyFocusArea(session.focusArea); // フォーカスは保存値のまま復元（AC-7）
+    setPendingSelectId(session.selectedBookmarkId ?? null); // 選択は結果が揃ってから ID→index 解決
+    // 復元クエリが残り、かつフォーカスが検索ボックス以外なら、印字文字での復帰時に全選択させる（AC-11）。
+    restoredQuerySelectPendingRef.current = session.query !== '' && session.focusArea !== 'search';
+    setHasRestored(true);
+  }, [hasRestored, sessionLoaded, foldersLoaded, folders, applyFocusArea]);
+
+  // 復元した選択ブックマーク ID を index へ解決（AC-6/AC-8）。isSettled で「復元後クエリを反映した結果」に対して行う。
+  useEffect(() => {
+    if (pendingSelectId === null || !isIndexReady || !isSettled) {
+      return;
+    }
+    setSelectedIndex(
+      resolveRestoredIndex(
+        pendingSelectId,
+        results.map(r => r.node.id),
+      ),
+    );
+    setPendingSelectId(null);
+  }, [pendingSelectId, isIndexReady, isSettled, results]);
+
+  // 現在の UI 状態から保存対象セッションを導出（毎レンダー）。復元完了かつ選択解決済みのときだけ「保存可（savable）」。
+  // 復元した選択の ID→index 解決が保留中（`pendingSelectId !== null`）の間は保存しない。フォーカス/スコープ/クエリの
+  // 復元を索引構築より前に行うため、この間 `results` はまだ空で `selectedBookmarkId` が拾えず、保存すると保存済みの
+  // 選択 ID を空で上書き（クロバー）してしまう。解決完了（または元から選択なし = null）まで待つ。
+  const currentSession = deriveSession({
+    focusArea: currentFocusArea,
+    scopeFolderId,
+    selectedBookmarkId: results[selectedIndex]?.node.id,
+    query,
+  });
+  const isSessionSavable = hasRestored && pendingSelectId === null;
+  sessionSnapshotRef.current = { savable: isSessionSavable, session: currentSession };
+
+  // 直近保存と等値でなければ保存する共通処理。debounce フラッシュ（変更時）と pagehide フラッシュ（閉じる時）で共用。
+  const persistSession = useCallback((session: PopupSession) => {
+    if (lastSavedSessionRef.current && sessionsEqual(lastSavedSessionRef.current, session)) {
+      return;
+    }
+    lastSavedSessionRef.current = session;
+    void localStateStore
+      .saveSession(session)
+      .catch((e: unknown) => console.error('[Popup] セッションの保存に失敗しました:', e));
+  }, []);
+
+  // 状態保存（debounce 付き）。変更のたびに再スケジュールし、直近保存と等値なら書き込まない（AC-3）。
+  const currentSessionKey = JSON.stringify(currentSession);
+  useEffect(() => {
+    if (!isSessionSavable) {
+      return;
+    }
+    const id = setTimeout(() => persistSession(currentSession), SESSION_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+    // currentSession は毎レンダー新規オブジェクトのため、内容の等価判定用に currentSessionKey を依存に使う。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSessionSavable, currentSessionKey, persistSession]);
+
+  // 閉じる直前のフラッシュ（AC-3）。ポップアップは外側クリックで唐突に閉じるため、debounce 待ちの最終変更が
+  // 失われないよう、hidden/pagehide で最新スナップショットを即時（debounce なしで）保存する。
+  useEffect(() => {
+    const flush = () => {
+      const snap = sessionSnapshotRef.current;
+      if (snap?.savable) {
+        persistSession(snap.session);
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        flush();
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [persistSession]);
+
   // INLINE_EDIT 中はヘッダーと左ペインを dimmed にする（デザイン状態1d。docs/design「他要素: opacity 0.45」）。
   const dimHeaderAndSidebar = mode.mode === 'INLINE_EDIT';
 
@@ -401,7 +581,12 @@ const Popup = () => {
       <PopupShell
         header={
           <div className={dimHeaderAndSidebar ? 'opacity-45' : undefined}>
-            <SearchHeader query={query} onQueryChange={setQuery} inputRef={searchInputRef} scopePath={scopePath} />
+            <SearchHeader
+              query={query}
+              onQueryChange={handleQueryChange}
+              inputRef={searchInputRef}
+              scopePath={scopePath}
+            />
           </div>
         }
         sidebar={
@@ -414,8 +599,9 @@ const Popup = () => {
               onScopeChange={setScopeFolderId}
               focused={mode.mode === 'FOLDER_TREE'}
               onActivate={enterFolderTree}
-              onFoldersLoaded={setFolders}
+              onFoldersLoaded={handleFoldersLoaded}
               actionsRef={folderTreeActionsRef}
+              ready={hasRestored}
             />
             {currentFocusArea === 'folderTree' && (
               <div

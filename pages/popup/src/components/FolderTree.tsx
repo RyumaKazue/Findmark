@@ -37,6 +37,12 @@ interface FolderTreeProps {
   onFoldersLoaded: (folders: FolderTreeNode[]) => void;
   /** キーボードインテントを受け取るための命令ハンドル。 */
   actionsRef: RefObject<FolderTreeActions | null>;
+  /**
+   * 行を描画してよいか（U19）。`false` の間は行を描画しない（フォルダ取得は継続する）。
+   * 状態復元（スコープ）が当たる前に既定スコープ「すべて」で行を描画してしまうと、起動直後に一瞬「すべて」が
+   * ハイライトされてから保存スコープへ移る見た目のフラッシュになる。復元適用が済むまで行の描画を保留して防ぐ。
+   */
+  ready?: boolean;
 }
 
 /** `folders` から ID でノードを引く（純粋・小さいため FolderTree ローカルに閉じる）。 */
@@ -69,6 +75,7 @@ export const FolderTree = ({
   onActivate,
   onFoldersLoaded,
   actionsRef,
+  ready = true,
 }: FolderTreeProps) => {
   const [folders, setFolders] = useState<FolderTreeNode[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -275,7 +282,8 @@ export const FolderTree = ({
     // tabIndex=-1 で実 DOM フォーカスを受け、キー処理は Popup の document リスナーが担う。
     <div ref={rootRef} role="tree" aria-label="フォルダ" tabIndex={-1} className="h-full overflow-auto outline-none">
       <div className="flex w-max min-w-full flex-col gap-[1px] px-2 py-3">
-        {rows.map(row => {
+        {/* 復元適用前（!ready）は行を描画しない。既定スコープ「すべて」でのフラッシュを避ける（U19）。 */}
+        {(ready ? rows : []).map(row => {
           const key = rowKey(row);
           const folderId = row.kind === 'folder' ? row.folder.id : null;
           return (

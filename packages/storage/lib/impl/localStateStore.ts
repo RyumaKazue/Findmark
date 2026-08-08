@@ -1,5 +1,5 @@
 import { createStorage, StorageEnum } from '../base/index.js';
-import type { BaseStorageType, LocalState } from '../types.js';
+import type { BaseStorageType, LocalState, PopupSession } from '../types.js';
 
 const storage = createStorage<LocalState>(
   'local_state',
@@ -19,6 +19,8 @@ type LocalStateStorageType = BaseStorageType<LocalState> & {
   expandFolders: (folderIds: string[]) => Promise<void>;
   /** 初回のみ既定の展開状態を書き込む（`isExpandedInitialized` を立てる）。2回目以降は何もしない。 */
   initializeExpanded: (folderIds: string[]) => Promise<void>;
+  /** ポップアップ状態の復元用セッションを保存する（U19・機能13。`session` フィールドのみ更新）。 */
+  saveSession: (session: PopupSession) => Promise<void>;
 };
 
 /** 端末固有の状態（`chrome.storage.local`、キー `local_state`）。 */
@@ -67,5 +69,9 @@ export const localStateStore: LocalStateStorageType = {
         expandedFolderIds: [...folderIds],
       };
     });
+  },
+  saveSession: async session => {
+    // 他フィールド（expandedFolderIds 等）を保ったまま session のみ差し替える。
+    await storage.set(current => ({ ...current, session }));
   },
 };

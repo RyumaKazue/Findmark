@@ -39,6 +39,7 @@ describe('localStateStore', () => {
     expect(typeof localStateStore.toggleExpanded).toBe('function');
     expect(typeof localStateStore.expandFolders).toBe('function');
     expect(typeof localStateStore.initializeExpanded).toBe('function');
+    expect(typeof localStateStore.saveSession).toBe('function');
   });
 
   it('toggleExpanded が展開状態を追加/削除する', async () => {
@@ -87,5 +88,19 @@ describe('localStateStore', () => {
     await localStateStore.set({ expandedFolderIds: [], isExpandedInitialized: true });
     await localStateStore.initializeExpanded(['root-1']);
     expect(localStateStore.getSnapshot()?.expandedFolderIds).toEqual([]);
+  });
+
+  it('saveSession は session フィールドのみ更新し他フィールドを保つ（U19）', async () => {
+    await localStateStore.set({ expandedFolderIds: ['a'], lastUsedFolderId: 'f9' });
+    await localStateStore.saveSession({
+      focusArea: 'result',
+      scopeFolderId: 'f1',
+      selectedBookmarkId: 'b2',
+      query: 'foo',
+    });
+    const snap = localStateStore.getSnapshot();
+    expect(snap?.expandedFolderIds).toEqual(['a']);
+    expect(snap?.lastUsedFolderId).toBe('f9');
+    expect(snap?.session).toEqual({ focusArea: 'result', scopeFolderId: 'f1', selectedBookmarkId: 'b2', query: 'foo' });
   });
 });
