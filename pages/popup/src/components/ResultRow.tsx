@@ -38,6 +38,14 @@ interface ResultRowProps {
   onDelete?: () => void;
   /** 行のドラッグ開始候補（mousedown。5px 超で D&D 開始・U12）。編集中の行では渡さない。 */
   onDragStart?: (e: MouseEvent) => void;
+  /** この行が選択中（チェック済み）か（U13）。 */
+  checked?: boolean;
+  /** 1件以上選択中で、全行が常時チェックボックス表示になっているか（U13）。 */
+  selectionActive?: boolean;
+  /** チェックボックスクリック・Ctrl/Cmd+クリックで選択をトグルする（開かない・U13）。 */
+  onToggleSelect?: () => void;
+  /** Shift+クリックで anchor からの範囲選択を行う（開かない・U13）。 */
+  onRangeSelect?: () => void;
 }
 
 /** 別名チップの最大表示数（docs/design「結果行の共通仕様」）。超過は `+N`。 */
@@ -79,6 +87,10 @@ export const ResultRow = ({
   onCancelEdit,
   onDelete,
   onDragStart,
+  checked = false,
+  selectionActive = false,
+  onToggleSelect,
+  onRangeSelect,
 }: ResultRowProps) => {
   const matched = item.matchedAliases;
   const others = item.aliases.filter(a => !matched.includes(a));
@@ -125,6 +137,8 @@ export const ResultRow = ({
   // 行クリックは既定で「開く」。別名チップ領域（data-alias-area）は別名編集、編集/削除アイコン
   // （data-row-action）はそれぞれの操作に分岐する。ネストした interactive 要素（button in button）を
   // 避けるため、単一の button 上でクリック対象により分岐する（既存の別名エリア分岐と同じ規律）。
+  // U13: チェックボックス領域（data-checkbox-area）は修飾キーの有無に関わらずトグル、行本体への
+  // Ctrl/Cmd+クリック・Shift+クリックはそれぞれ個別トグル・範囲選択にし、開かない（選択操作を優先する）。
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
     const target = e.target as HTMLElement;
     if (onDelete && target.closest('[data-row-action="delete"]')) {
@@ -135,6 +149,18 @@ export const ResultRow = ({
       onEnterInlineEdit();
       return;
     }
+    if (target.closest('[data-checkbox-area]')) {
+      onToggleSelect?.();
+      return;
+    }
+    if (e.shiftKey) {
+      onRangeSelect?.();
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) {
+      onToggleSelect?.();
+      return;
+    }
     if (onEnterAliasEdit && target.closest('[data-alias-area]')) {
       onEnterAliasEdit();
       return;
@@ -142,11 +168,11 @@ export const ResultRow = ({
     onOpen();
   };
 
-  // ドラッグ開始は行本体のみ。編集/削除アイコン・別名エリア上の mousedown は既存のクリック分岐を優先する
-  // （それらの領域での微小なブレでドラッグが誤発火しないようにする）。
+  // ドラッグ開始は行本体のみ。編集/削除アイコン・別名エリア・チェックボックス領域上の mousedown は
+  // 既存のクリック分岐を優先する（それらの領域での微小なブレでドラッグが誤発火しないようにする・U13）。
   const handleMouseDown = (e: MouseEvent<HTMLButtonElement>) => {
     const target = e.target as HTMLElement;
-    if (target.closest('[data-row-action], [data-alias-area]')) {
+    if (target.closest('[data-row-action], [data-alias-area], [data-checkbox-area]')) {
       return;
     }
     onDragStart?.(e);
@@ -166,12 +192,37 @@ export const ResultRow = ({
         // 非アクティブなら中立グレー背景（弱）。左バーはフォーカス枠の外へはみ出して見えるため使わない。
         selected && resultFocused && 'bg-accent-bg-selected',
         selected && !resultFocused && 'bg-row-selected',
-        !selected && 'hover:bg-pane-3',
+        // チェック選択中（U13）はフォーカスハイライトとは別軸で背景を付ける（design 1f）。
+        // 両方成立時はフォーカスハイライト（上の分岐）を優先し、二重の背景指定を避ける。
+        checked && !selected && 'bg-row-selected',
+        !selected && !checked && 'hover:bg-pane-3',
         dimmed && 'opacity-40',
       )}>
       {/* 1段目 */}
       <span className="flex items-center gap-[10px]">
-        <Favicon url={item.node.url ?? ''} />
+        {/* チェックボックスの段階表示（U13・デザイン1f）: 通常=ファビコンのみ / ホバー=行ホバーでチェックボックスに
+            変化（Gmail/Finder挙動。group-hover は行全体の group を参照）/ 1件以上選択中=全行常時表示。
+            同寸オーバーレイで切替時にレイアウトが動かないようにし、非表示時は pointer-events-none で
+            チェックボックスが下のファビコンへのクリック（＝開く）を奪わないようにする。 */}
+        <span className="relative flex size-4 flex-none items-center justify-center">
+          {!(checked || selectionActive) && (
+            <span className="group-hover:opacity-0">
+              <Favicon url={item.node.url ?? ''} />
+            </span>
+          )}
+          <span
+            data-checkbox-area="true"
+            title={checked ? '選択解除' : '選択'}
+            className={cn(
+              'absolute inset-0 flex items-center justify-center rounded text-[10px] font-bold leading-none text-white transition-opacity',
+              checked ? 'bg-accent' : 'border-line-dashed border-[1.5px] bg-white',
+              checked || selectionActive
+                ? 'pointer-events-auto opacity-100'
+                : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
+            )}>
+            {checked && '✓'}
+          </span>
+        </span>
         <span className="text-ink flex-1 truncate text-[13.5px] font-medium">{item.node.title}</span>
         {/* ホバー時に右端へフェードインする編集/削除アイコン（docs/design「hover: 右端に編集/削除アイコン」）。 */}
         <span className="flex flex-none items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -204,7 +255,10 @@ export const ResultRow = ({
                 key={`${alias}-${i}`}
                 className={cn(
                   'flex-none rounded-full px-2 py-[2px] text-[11px] font-medium leading-[15px]',
-                  isMatched ? 'bg-accent text-white' : 'bg-accent-bg text-accent-strong',
+                  isMatched
+                    ? 'bg-accent text-white'
+                    : // 選択中の行はチップ背景を選択行用の濃さに揃える（design 1f「チップ bg は #E4E9FB」）。
+                      cn(checked ? 'bg-accent-bg-selected' : 'bg-accent-bg', 'text-accent-strong'),
                   isAscii(alias) && 'font-mono',
                 )}>
                 {alias}

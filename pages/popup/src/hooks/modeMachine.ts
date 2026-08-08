@@ -265,7 +265,7 @@ const isSearchFirstExempt = (mode: Mode): boolean =>
  * `delete`/`undo`（U10）はモード遷移を伴わないため厳密には「モード入口」ではないが、
  * 対象未確定のまま LIST で解決するという性質が同じため同じ関数・型に含める。
  */
-type ShortcutIntent = 'inline-edit' | 'alias-edit' | 'panel' | 'delete' | 'undo';
+type ShortcutIntent = 'inline-edit' | 'alias-edit' | 'panel' | 'delete' | 'undo' | 'select-all';
 
 /**
  * モード入口ショートカットの定義（ドキュメント兼マッチング用の単一集約）。
@@ -277,6 +277,7 @@ const SHORTCUTS = {
   panel: 'Ctrl(Cmd)+M',
   delete: 'Delete',
   undo: 'Ctrl(Cmd)+Z',
+  selectAll: 'Ctrl(Cmd)+A',
 } as const;
 
 /**
@@ -297,6 +298,9 @@ const resolveShortcutIntent = (e: KeyLike): ShortcutIntent | null => {
   if (key === 'm') return 'panel';
   // Ctrl/Cmd+Z のみをアンドゥとする（Shift 付き = やり直しは未定義のため区別して弾く）。
   if (key === 'z' && !e.shiftKey) return 'undo';
+  // Ctrl/Cmd+A（U13）。検索ボックスのネイティブなテキスト全選択を奪わないための listFocus 判定は
+  // 呼び出し側（Popup）の責務とする（本関数は対象未確定のままインテントのみを返す）。
+  if (key === 'a' && !e.shiftKey) return 'select-all';
   return null;
 };
 

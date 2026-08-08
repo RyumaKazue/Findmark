@@ -259,7 +259,7 @@ describe('resolveShortcutIntent', () => {
   it('修飾なしの letter や無関係キーは null', () => {
     expect(resolveShortcutIntent({ key: 'e' })).toBeNull();
     expect(resolveShortcutIntent({ key: 'm' })).toBeNull();
-    expect(resolveShortcutIntent({ key: 'a', ctrlKey: true })).toBeNull();
+    expect(resolveShortcutIntent({ key: 'a' })).toBeNull();
     expect(resolveShortcutIntent({ key: 'e', ctrlKey: true, altKey: true })).toBeNull();
   });
 
@@ -282,5 +282,14 @@ describe('resolveShortcutIntent', () => {
   it('Ctrl(⌘)+Shift+Z は undo にしない（やり直しは未定義）', () => {
     expect(resolveShortcutIntent({ key: 'z', ctrlKey: true, shiftKey: true })).toBeNull();
     expect(resolveShortcutIntent({ key: 'Z', metaKey: true, shiftKey: true })).toBeNull();
+  });
+
+  it('Ctrl(⌘)+A → select-all（U13）', () => {
+    expect(resolveShortcutIntent({ key: 'a', ctrlKey: true })).toBe('select-all');
+    expect(resolveShortcutIntent({ key: 'A', metaKey: true })).toBe('select-all');
+  });
+
+  it('Ctrl(⌘)+Shift+A は select-all にしない', () => {
+    expect(resolveShortcutIntent({ key: 'a', ctrlKey: true, shiftKey: true })).toBeNull();
   });
 });
