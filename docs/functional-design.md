@@ -399,6 +399,11 @@ interface ConflictResolver {
 
 > **標準HTML(Netscape Bookmark File)の処理概要**: エクスポートは `<DL><DT><A HREF>` 構造でフォルダ階層を `<DL>` の入れ子として出力する(別名は独自属性にできないため含めない)。インポートは同構造をパースして `ImportBookmark[]` に変換し、`ensureFolderPath` + `create` で新規作成のみ行う(重複解決は独自JSONのみ対象)。
 
+> **実装状況(U15, 2026-08-11)**: `packages/shared` は React/DOM API に依存禁止(repository-structure.md)のため、上記インターフェース例を以下のとおり是正して実装した。
+> - `exportJson()/exportHtml(): Promise<Blob>` → **`Promise<string>`**。`Blob`(DOM/File API)は生成せず、生テキストを返す。ダウンロード用の `Blob` 化・`<a download>` トリガーは呼び出し側(`pages/options` の `ImportExportTab`)が担う。
+> - `importHtml(file: File)`/`importJson(file: File, resolver)` → **`importHtml(rawText: string)`/`importJson(rawText: string, resolver)`**。`File` オブジェクトは扱わず、`pages/options` が `file.text()` で読み込んだ文字列を渡す。
+> - `ConflictResolver.resolve(...)` → **`Promise<{resolution, applyToAll}>`**(非同期)。実際の UI(`ConflictDialog`)はユーザーのクリックを待つ必要があるため、同期関数では表現できない。第2引数に `existingFolderPath: string[]` を追加し、既存側のフォルダパス比較を呼び出し元で再取得せずに済むようにした。
+
 ---
 
 ## 独自JSONフォーマット

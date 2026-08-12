@@ -1,26 +1,18 @@
 import '@src/Options.css';
-import { t } from '@extension/i18n';
-import { PROJECT_URL_OBJECT, useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
-import { cn, ErrorDisplay, LoadingSpinner, ToggleButton } from '@extension/ui';
+import { withErrorBoundary } from '@extension/shared';
+import { ErrorDisplay } from '@extension/ui';
+import { ImportExportTab } from '@src/components/ImportExportTab';
 
-const Options = () => {
-  const { isLight } = useStorage(exampleThemeStorage);
-  const logo = isLight ? 'options/logo_horizontal.svg' : 'options/logo_horizontal_dark.svg';
+/**
+ * オプションページのルート（U15）。ポップアップに置けない機能（ファイルダイアログを要するインポート/
+ * エクスポート）をここに集約する。U7 が Popup のボイラープレートを置換したのと同じ扱いで、U15 が
+ * Options のデモUI（`exampleThemeStorage`/ロゴ）を置換する。将来 U16 でゴミ箱・設定タブを追加する際は
+ * タブ切り替えの土台をここへ導入する（現時点では ImportExportTab 単体のため過剰な先取りをしない）。
+ */
+const Options = () => (
+  <div className="bg-pane min-h-screen">
+    <ImportExportTab />
+  </div>
+);
 
-  const goGithubSite = () => chrome.tabs.create(PROJECT_URL_OBJECT);
-
-  return (
-    <div className={cn('App', isLight ? 'bg-slate-50 text-gray-900' : 'bg-gray-800 text-gray-100')}>
-      <button onClick={goGithubSite}>
-        <img src={chrome.runtime.getURL(logo)} className="App-logo" alt="logo" />
-      </button>
-      <p>
-        Edit <code>pages/options/src/Options.tsx</code>
-      </p>
-      <ToggleButton onClick={exampleThemeStorage.toggle}>{t('toggleTheme')}</ToggleButton>
-    </div>
-  );
-};
-
-export default withErrorBoundary(withSuspense(Options, <LoadingSpinner />), ErrorDisplay);
+export default withErrorBoundary(Options, ErrorDisplay);

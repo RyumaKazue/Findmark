@@ -4,5 +4,6 @@ export * from './lib/utils/index.js';
 export * from './lib/search/index.js';
 export * from './lib/stores/index.js';
 export * from './lib/undo/index.js';
+export * from './lib/import-export/index.js';
 export type * from './lib/types/index.js';
 export * from './const.js';
