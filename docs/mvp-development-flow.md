@@ -117,9 +117,9 @@ PRD「スコープ外」「将来的な機能(Post-MVP)」に従い、以下は�
 | U14 | add-current-page | 現在ページ登録: ヘッダー「+追加」で即時登録し編集パネルへ、タイトル/保存先(絞り込みDD・初期値=前回)/別名編集、各フィールド即時保存、パネル閉でも登録維持 | 9 | U4, U9, U11 | 即時登録→編集パネル / 登録済みは「★登録済み」 / 保存先初期値が前回フォルダ / 閉じても登録が残る | `pages/popup/src/components/AddCurrentPanel.tsx` |
 | U15 | import-export | ImportExportService(独自JSON `format/version` 入出力、標準HTML入出力、`ensureFolderPath`自動作成、重複解決 skip/overwrite/keepBoth・一括適用)と Options の ImportExportTab / ConflictDialog | 11 | U4, U5 | 独自JSONで url/title/folderPath/aliases 入出力 / URL突合とフォルダ自動作成 / 3系統の重複解決 / version後方互換 | `packages/shared/lib/import-export/`, `pages/options/src/` |
 | U16 | trash | TrashStore(30日保持・件数/容量上限で古い順自動削除、フォルダは配下ツリーごと保存、`ensureFolderPath`で復元)と Options の TrashTab / SettingsTab(保持日数・locale)。**※Options のタブ切り替え機構を本単位で導入する**(U15 時点では `ImportExportTab` 単体のため意図的に見送った) | 12 | U4, U5, U10 | 削除が即時アンドゥ+30日ゴミ箱の2層 / 元パスへ復元(無ければ再作成) / 上限超過で古い順に退避 | `packages/storage/lib/impl/trashStore.ts`, `pages/options/src/components/TrashTab.tsx` |
-| U17 | service-worker | Service Worker: 起動時クリーンアップ(存在しないフォルダID・別名参照の掃除)、`chrome.commands` 受信によるショートカット起動 | 前提(1,信頼性) | U4, U5 | 起動時に孤立参照を掃除 / ショートカットでpopup起動 | `chrome-extension/src/background/index.ts` |
+| U17 | service-worker | Service Worker: 起動時クリーンアップ(存在しないフォルダID・別名参照の掃除、**期限切れゴミ箱の掃除**を追加)、起動ショートカットの割り当て検証と Options での案内。**※`_execute_action` は Chrome 予約コマンドで `onCommand` に配信されないため、SW は「受信」ではなく `chrome.commands.getAll()` による割り当て検証を担う**(起動そのものは U1 の manifest が担う) | 前提(1,信頼性) | U4, U5 | 起動時に孤立参照を掃除 / ショートカットでpopup起動(未割り当て時は Options が `chrome://extensions/shortcuts` を案内) | `chrome-extension/src/background/`, `packages/storage/lib/impl/localStateStore.ts`, `pages/options/src/components/SettingsTab.tsx` |
 | U19 | popup-state-restore | ポップアップ状態の復元: フォーカス位置・フォルダスコープ・選択ブックマーク(**ID保持**)・検索クエリを `storage.local`(`PopupSession`)へ**変更のたびに即時(debounce付き)** 保存し、次回起動時に復元。索引構築完了後に適用、削除済み参照は当該項目のみ既定値へフォールバック、復帰時のクエリ全選択 | 13 | U8a, U11 | 4項目が保存・復元される / 初回起動時は既定値(左ペイン・すべて・先頭行・空) / 削除済みフォルダは「すべて」へ・削除済みブックマークは先頭行へ倒れフォーカス位置は保存値のまま / 選択行がIDで保持されインデックスのズレが起きない / 印字文字での復帰時に既存クエリが全選択される / 200ms要件を満たす(既定値を先に適用) | `packages/storage/lib/types.ts`, `packages/storage/lib/impl/localStateStore.ts`, `pages/popup/src/Popup.tsx` 他 |
-| U18 | release-prep | リリース準備: `_locales`(ja既定/en)多言語対応の全UI適用、アイコン(128px等)、スクリーンショット、ストア説明文(ja/en)、プライバシーポリシー(データ収集なし宣言)、`favicon`権限の警告有無確認 | リリース準備タスク | U7〜U16, U19 | 全UIがi18n化 / ストア提出物が揃う / 権限説明とプライバシーポリシー整合 | `packages/i18n/`, `chrome-extension/public/`, ストア素材 |
+| U18 | release-prep | リリース準備: `_locales`(ja既定/en)多言語対応の全UI適用(**U17 で追加した Options のショートカット案内文を含む**)、アイコン(128px等)、スクリーンショット、ストア説明文(ja/en。**起動ショートカットが未割り当てになりうる旨の記載を検討**)、プライバシーポリシー(データ収集なし宣言)、`favicon`権限の警告有無確認 | リリース準備タスク | U7〜U17, U19 | 全UIがi18n化 / ストア提出物が揃う / 権限説明とプライバシーポリシー整合 | `packages/i18n/`, `chrome-extension/public/`, ストア素材 |
 
 ---
 
@@ -205,7 +205,7 @@ graph TD
 ## MVP完成の定義（Definition of Done）
 
 ### 作業単位の完了
-- [ ] U1〜U17（機能1〜12の実装 + 基盤 + 信頼性）が全て完了している
+- [x] U1〜U17（機能1〜12の実装 + 基盤 + 信頼性）が全て完了している
 - [x] U6a / U8a（キーボード完結ナビゲーションの仕様変更対応）が完了している
 - [x] U19（ポップアップ状態の復元・機能13）が完了している
 - [ ] U18（リリース準備）が完了している
@@ -259,6 +259,6 @@ graph TD
 | U14 | add-current-page | 9 | ✅ 完了 (2026-08-08) | `.steering/20260808-add-current-page/` |
 | U15 | import-export | 11 | ✅ 完了 (2026-08-11) | `.steering/20260808-import-export/` |
 | U16 | trash | 12 | ✅ 完了 (2026-08-14) | `.steering/20260814-trash/` |
-| U17 | service-worker | 前提(1,信頼性) | 未着手 | - |
+| U17 | service-worker | 前提(1,信頼性) | ✅ 完了 (2026-08-14) | `.steering/20260814-service-worker/` |
 | U19 | popup-state-restore | 13 | ✅ 完了 (2026-08-08) | `.steering/20260807-popup-state-restore/` |
 | U18 | release-prep | リリース準備 | 未着手 | - |

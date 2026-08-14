@@ -21,6 +21,8 @@ type LocalStateStorageType = BaseStorageType<LocalState> & {
   initializeExpanded: (folderIds: string[]) => Promise<void>;
   /** ポップアップ状態の復元用セッションを保存する（U19・機能13。`session` フィールドのみ更新）。 */
   saveSession: (session: PopupSession) => Promise<void>;
+  /** 起動ショートカットの未割り当て状態を記録する（U17。Service Worker が起動時に検証して書き込む）。 */
+  setShortcutUnassigned: (unassigned: boolean) => Promise<void>;
 };
 
 /** 端末固有の状態（`chrome.storage.local`、キー `local_state`）。 */
@@ -73,5 +75,15 @@ export const localStateStore: LocalStateStorageType = {
   saveSession: async session => {
     // 他フィールド（expandedFolderIds 等）を保ったまま session のみ差し替える。
     await storage.set(current => ({ ...current, session }));
+  },
+  setShortcutUnassigned: async unassigned => {
+    await storage.set(current => {
+      // 起動のたびに検証するため値が変わらないケースが大半。同値なら同一オブジェクトを返し、
+      // 購読側（Options）の無用な再描画を避ける（`expandFolders` と同じ流儀）。
+      if (current.isShortcutUnassigned === unassigned) {
+        return current;
+      }
+      return { ...current, isShortcutUnassigned: unassigned };
+    });
   },
 };

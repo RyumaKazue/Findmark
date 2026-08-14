@@ -474,6 +474,10 @@ Ctrl/Cmd + A        全件選択
 
 `commands._execute_action` の `suggested_key`(`Ctrl+Shift+F` / mac `Command+Shift+F`)は、**他拡張が先に取得しているとインストール時に未割り当てのまま**になる。キーボード完結を掲げる以上「起動キーが効かない」は致命的なため、初回起動時に `chrome://extensions/shortcuts` への案内が必要。ただし拡張からこのURLは直接開けないため、コピー可能なテキストで示す方式を検討する。
 
+> **対応済み(U17・2026-08-14)**: Service Worker が起動時に `chrome.commands.getAll()` で `_execute_action` の割り当て状態を検証し、未割り当てなら `LocalState.isShortcutUnassigned` に記録する。Options の「設定」タブは未割り当てのときのみ案内セクションを表示し、`chrome://extensions/shortcuts` を読み取り専用テキスト+コピーボタンで提示する(拡張から直接開けないため)。ユーザーが手動で割り当てた後は次回起動時の検証で案内が自動的に消える。
+>
+> **実機での確認事項(2026-08-14)**: 開発環境で `Command+Shift+F` が実際に未割り当てとなる事象を確認した。suggested_key はインストール/更新時にしか適用されず、競合していると黙って空のままになるため、**この案内の存在自体がリリース品質の前提**となる。ストア公開時の説明文にも同趣旨の記載を検討する(U18)。
+
 ---
 
 ## リリース準備タスク

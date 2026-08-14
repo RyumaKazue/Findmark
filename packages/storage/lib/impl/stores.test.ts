@@ -103,4 +103,20 @@ describe('localStateStore', () => {
     expect(snap?.lastUsedFolderId).toBe('f9');
     expect(snap?.session).toEqual({ focusArea: 'result', scopeFolderId: 'f1', selectedBookmarkId: 'b2', query: 'foo' });
   });
+
+  it('setShortcutUnassigned は該当フィールドのみ更新する（U17）', async () => {
+    await localStateStore.set({ expandedFolderIds: ['a'] });
+    await localStateStore.setShortcutUnassigned(true);
+    expect(localStateStore.getSnapshot()).toEqual({ expandedFolderIds: ['a'], isShortcutUnassigned: true });
+    await localStateStore.setShortcutUnassigned(false);
+    expect(localStateStore.getSnapshot()?.isShortcutUnassigned).toBe(false);
+  });
+
+  it('setShortcutUnassigned は現在値と同じなら状態を作り直さない（U17）', async () => {
+    await localStateStore.set({ expandedFolderIds: [], isShortcutUnassigned: true });
+    const before = localStateStore.getSnapshot();
+    await localStateStore.setShortcutUnassigned(true);
+    // 同値なら同一オブジェクト参照のまま＝購読側（Options）が無用に再描画されない。
+    expect(localStateStore.getSnapshot()).toBe(before);
+  });
 });
