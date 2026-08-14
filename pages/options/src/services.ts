@@ -1,5 +1,5 @@
 import { ImportExportService, normalizer } from '@extension/shared';
-import { AliasStore, TrashStore, bookmarkService, settingsStore } from '@extension/storage';
+import { AliasStore, TrashStore, bookmarkService, localStateStore, settingsStore } from '@extension/storage';
 
 /**
  * ドメイン/データレイヤーの結線モジュール（U15。popup の `services.ts` と同じ集約パターン。U16 で trashStore を追加）。
@@ -12,4 +12,4 @@ import { AliasStore, TrashStore, bookmarkService, settingsStore } from '@extensi
 export const aliasStore = new AliasStore(normalizer);
 export const importExportService = new ImportExportService(normalizer, bookmarkService, aliasStore);
 export const trashStore = new TrashStore(bookmarkService, aliasStore);
-export { bookmarkService, settingsStore };
+export { bookmarkService, localStateStore, settingsStore };

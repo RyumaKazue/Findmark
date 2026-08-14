@@ -166,4 +166,13 @@ export interface LocalState {
    * `createStorage` の既定値オブジェクトには含めない（未保存を `undefined` で表し、既存の既定値の形を変えない）。
    */
   session?: PopupSession;
+  /**
+   * 起動ショートカット（manifest の `commands._execute_action`）が未割り当てかどうか（U17）。
+   *
+   * `suggested_key`（`Ctrl+Shift+F`）は他拡張が先に取得しているとインストール時に**黙って未割り当て**になる
+   * （PRD「起動ショートカットの割り当て」）。Service Worker が起動時に `chrome.commands.getAll()` で
+   * 実際の割り当て状態を確認して書き込み、Options が `true` のときだけ案内を表示する。
+   * `undefined`（未検証）と `false`（割り当て済み）はどちらも「案内を出さない」として扱う。
+   */
+  isShortcutUnassigned?: boolean;
 }

@@ -95,8 +95,20 @@ Chrome拡張は複数の実行コンテキスト(Popup / Options / Service Worke
 - **禁止**: 検索・整理などのビジネスロジックの実装。
 
 #### 背景(Service Worker)
-- **責務**: ブラウザ起動時の掃除(存在しないフォルダID/別名参照のクリーンアップ)、`chrome.commands` のショートカット受信。
+- **責務**: ブラウザ起動時の掃除、起動ショートカットの割り当て検証。
 - MV3のため常駐しない。重い処理は持たせず、UIコンテキスト主体とする。
+
+**起動時クリーンアップの内訳(U17 で実装)**。`chrome.runtime.onStartup` / `onInstalled` で起動し、3種を互いに独立して実行する(1つが失敗しても他は継続し、失敗は `console.error` に残して次回起動での再試行に委ねる)。
+
+| 対象 | 内容 |
+|------|------|
+| `LocalState` の死んだ参照 | 現存しないフォルダID(`expandedFolderIds` / `lastUsedFolderId` / `session.scopeFolderId`)・ブックマークID(`session.selectedBookmarkId`)を除去。差分があるときだけ書き込む |
+| 孤立した別名レコード | 拡張外(Chrome標準UI・他端末)での削除で取り残された `AliasRecord` を除去。`sync` の100KB枠を圧迫し `local` へのフォールバック(=同期停止)を招くため |
+| ゴミ箱 | 保持日数超過(`purgeExpired`)と件数/容量上限超過(`enforceLimits`)。Optionsを開かないユーザーでも「30日で自動削除」を成立させる |
+
+**誤削除防止のガード**: 別名の削除は不可逆のため、①`AliasRecord.updatedAt` が30日以内なら孤立していても残す ②ブックマークが0件なら別名掃除をスキップ(ツリーが完全に空なら全掃除をスキップ)。ブックマーク同期が未完了な状態で全参照を「存在しない」と誤判定する事故を防ぐ。クリーンアップは冪等。
+
+**起動ショートカット**: `commands._execute_action` は Chrome の予約コマンドで、押下時はブラウザが直接ポップアップを開き `chrome.commands.onCommand` には配信されない。したがって SW は起動を「受信」せず、`chrome.commands.getAll()` で**実際の割り当て状態を検証**して `LocalState.isShortcutUnassigned` に記録し、Options が未割り当て時のみ案内を表示する(PRD「起動ショートカットの割り当て」)。
 
 ---
 
