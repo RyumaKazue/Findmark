@@ -1,4 +1,5 @@
 import { buildMoveCandidates, clampIndex, filterCandidates } from './movePanelModel.js';
+import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -49,6 +50,7 @@ interface MovePanelProps {
  * 絞り込み・候補構築・インデックスクランプは純粋モデル（`movePanelModel`）に委譲する。
  */
 export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, actionsRef }: MovePanelProps) => {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,14 +106,14 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
       {/* 背景オーバーレイ（クリックで閉じる）。native button でキーボード/マウス双方に対応する。 */}
       <button
         type="button"
-        aria-label="閉じる"
+        aria-label={t('commonClose')}
         tabIndex={-1}
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/20"
       />
       <div
         role="dialog"
-        aria-label="フォルダを選択して移動"
+        aria-label={t('popupMoveDialogLabel')}
         className="shadow-shell border-line relative flex max-h-[380px] w-[420px] flex-col overflow-hidden rounded-lg border bg-white">
         <div className="border-line-row flex-none border-b px-3 py-2.5">
           <input
@@ -119,13 +121,13 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="フォルダ名で絞り込み…"
+            placeholder={t('popupFolderFilterPlaceholder')}
             className="border-line focus:border-accent text-ink w-full rounded-md border px-2.5 py-1.5 text-[13px] outline-none"
           />
         </div>
         <div ref={listRef} className="min-h-0 flex-1 overflow-auto p-1.5">
           {filtered.length === 0 ? (
-            <div className="text-ink-faint px-3 py-6 text-center text-[12.5px]">該当するフォルダがありません</div>
+            <div className="text-ink-faint px-3 py-6 text-center text-[12.5px]">{t('popupFolderNoMatch')}</div>
           ) : (
             filtered.map((c, i) => {
               const selected = i === index;
@@ -151,7 +153,11 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
                   <span className="flex w-full items-center gap-1.5">
                     <span aria-hidden="true">📁</span>
                     <span className="truncate text-[13px] font-medium">{c.title}</span>
-                    {c.disabled && <span className="text-ink-faint ml-auto flex-none text-[11px]">現在の場所</span>}
+                    {c.disabled && (
+                      <span className="text-ink-faint ml-auto flex-none text-[11px]">
+                        {t('popupMoveCurrentLocation')}
+                      </span>
+                    )}
                   </span>
                   {c.path.length > 1 && (
                     <span className="text-ink-soft truncate pl-[22px] text-[11px]">{c.path.join(' / ')}</span>

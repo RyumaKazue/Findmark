@@ -1,6 +1,6 @@
 {
   "name": "@extension/i18n",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "chrome extension - internationalization",
   "type": "module",
   "private": true,
@@ -19,12 +19,15 @@
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@extension/env": "workspace:*"
   },
   "devDependencies": {
-    "@extension/tsconfig": "workspace:*"
+    "@extension/tsconfig": "workspace:*",
+    "@vitest/coverage-v8": "^4.1.10",
+    "vitest": "^4.1.10"
   }
 }

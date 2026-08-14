@@ -1,3 +1,4 @@
+import { useI18n } from '@extension/i18n';
 import { cn } from '@extension/ui';
 
 interface ToastProps {
@@ -16,29 +17,33 @@ interface ToastProps {
  * アンドゥのキーボード手段は `Ctrl/Cmd+Z`（document リスナー・Popup 側）で担保するため、
  * 本コンポーネントはフォーカスを奪わない（検索ボックスのフォーカスを維持する）。
  */
-export const Toast = ({ message, actionLabel, onAction, onDismiss, tone = 'default' }: ToastProps) => (
-  <div
-    role="status"
-    aria-live="polite"
-    className={cn(
-      'shadow-edit-row absolute inset-x-0 bottom-4 z-10 mx-auto flex w-fit max-w-[90%] items-center gap-3 rounded-md px-4 py-2.5',
-      tone === 'danger' ? 'bg-danger text-white' : 'bg-ink text-white',
-    )}>
-    <span className="text-[12.5px] font-medium">{message}</span>
-    {actionLabel && onAction && (
+export const Toast = ({ message, actionLabel, onAction, onDismiss, tone = 'default' }: ToastProps) => {
+  const { t } = useI18n();
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        'shadow-edit-row absolute inset-x-0 bottom-4 z-10 mx-auto flex w-fit max-w-[90%] items-center gap-3 rounded-md px-4 py-2.5',
+        tone === 'danger' ? 'bg-danger text-white' : 'bg-ink text-white',
+      )}>
+      <span className="text-[12.5px] font-medium">{message}</span>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="flex-none text-[12.5px] font-bold text-white underline underline-offset-2">
+          {actionLabel}
+        </button>
+      )}
       <button
         type="button"
-        onClick={onAction}
-        className="flex-none text-[12.5px] font-bold text-white underline underline-offset-2">
-        {actionLabel}
+        onClick={onDismiss}
+        aria-label={t('commonClose')}
+        className="flex-none px-1 text-white/70 hover:text-white">
+        ✕
       </button>
-    )}
-    <button
-      type="button"
-      onClick={onDismiss}
-      aria-label="閉じる"
-      className="flex-none px-1 text-white/70 hover:text-white">
-      ✕
-    </button>
-  </div>
-);
+    </div>
+  );
+};

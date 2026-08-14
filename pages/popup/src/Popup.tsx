@@ -1,4 +1,5 @@
 import '@src/Popup.css';
+import { I18nProvider, useI18n } from '@extension/i18n';
 import { withErrorBoundary } from '@extension/shared';
 import { ErrorDisplay, cn } from '@extension/ui';
 import { AddCurrentPanel } from '@src/components/AddCurrentPanel';
@@ -32,6 +33,7 @@ import { useMode } from '@src/hooks/useMode';
 import { useRowActions } from '@src/hooks/useRowActions';
 import { useSearch } from '@src/hooks/useSearch';
 import { useSelection } from '@src/hooks/useSelection';
+import { useUiLocale } from '@src/hooks/useUiLocale';
 import { useUndo } from '@src/hooks/useUndo';
 import { aliasStore, bookmarkService, localStateStore } from '@src/services';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -62,6 +64,7 @@ const SESSION_SAVE_DEBOUNCE_MS = 200;
  * キーボード操作可能になったため、U7 の「検索ボックスへ自動フォーカス」は廃止する。保存状態からの復元は U19。
  */
 const Popup = () => {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   // 左ペインのスコープ（null = すべて）。左ペインのフォーカス行でもあり、直下のみに絞り込む（U6a/U11）。
@@ -862,7 +865,13 @@ const Popup = () => {
   }, [folders, scopeFolderId]);
 
   // 右ペインのメタ行文言（U11。クエリなし & スコープ「すべて」では null = メタ行なし）。
-  const metaLabel = buildResultMetaLabel({ scopePath, query: query.trim(), count: results.length });
+  const meta = buildResultMetaLabel({
+    scopePath,
+    allScopeLabel: t('commonAll'),
+    query: query.trim(),
+    count: results.length,
+  });
+  const metaLabel = meta === null ? null : t(meta.key, meta.substitutions);
 
   return (
     <div className="relative">
@@ -916,7 +925,7 @@ const Popup = () => {
             <ResultList
               results={results}
               selectedIndex={selectedIndex}
-              emptyLabel={isIndexReady ? '一致するブックマークがありません' : '読み込み中…'}
+              emptyLabel={isIndexReady ? t('popupEmptyNoResults') : t('commonLoading')}
               metaLabel={metaLabel}
               resultFocused={currentFocusArea === 'result'}
               editingAliasId={editingAliasId}
@@ -985,7 +994,12 @@ const Popup = () => {
         />
       )}
       {undo.pending ? (
-        <Toast message={undo.pending.label} actionLabel="元に戻す" onAction={undoLatest} onDismiss={undo.dismiss} />
+        <Toast
+          message={undo.pending.label}
+          actionLabel={t('popupUndoAction')}
+          onAction={undoLatest}
+          onDismiss={undo.dismiss}
+        />
       ) : rowActions.error ? (
         <Toast message={rowActions.error} onDismiss={rowActions.clearError} tone="danger" />
       ) : addCurrent.error ? (
@@ -995,4 +1009,18 @@ const Popup = () => {
   );
 };
 
-export default withErrorBoundary(Popup, ErrorDisplay);
+/**
+ * 表示ロケールを解決して `I18nProvider` を張るルート（U18）。`Popup` 本体は `useI18n()` で `t` を得る。
+ * ロケールが変わっても `Popup` は再マウントされない（Provider の値が差し替わるだけ）。
+ */
+const PopupRoot = () => {
+  const locale = useUiLocale();
+
+  return (
+    <I18nProvider locale={locale}>
+      <Popup />
+    </I18nProvider>
+  );
+};
+
+export default withErrorBoundary(PopupRoot, ErrorDisplay);

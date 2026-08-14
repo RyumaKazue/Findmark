@@ -1,5 +1,6 @@
 import { findFolderPath } from '../components/folderTreeModel.js';
 import { validateUrl } from '../components/inlineEditModel.js';
+import { useI18n } from '@extension/i18n';
 import { aliasStore, bookmarkService, localStateStore, searchEngine } from '@src/services';
 import { useCallback, useState } from 'react';
 import type { SearchResultItem } from '@extension/shared';
@@ -68,6 +69,7 @@ const useAddCurrent = (
   refresh: () => void,
   rowActions: UseRowActionsApi,
 ): UseAddCurrentApi => {
+  const { t } = useI18n();
   const [entry, setEntry] = useState<AddCurrentEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,12 +78,12 @@ const useAddCurrent = (
       const tab = await bookmarkService.getCurrentTab();
       // 空 URL（activeTab 権限が及ばないページ等）は「未入力」ではなく「このページは対象外」と伝える。
       if (tab.url === '') {
-        setError('このページは登録できません');
+        setError(t('popupErrorPageNotAddable'));
         return false;
       }
       const validation = validateUrl(tab.url);
       if (!validation.ok) {
-        setError(validation.message);
+        setError(t(validation.message.key, validation.message.substitutions));
         return false;
       }
 
@@ -127,10 +129,10 @@ const useAddCurrent = (
       return true;
     } catch (e) {
       console.error('[useAddCurrent] 現在のページを登録できませんでした:', e);
-      setError('現在のページを登録できませんでした');
+      setError(t('popupErrorAddCurrentFailed'));
       return false;
     }
-  }, [folders, refresh]);
+  }, [folders, refresh, t]);
 
   const updateTitle = useCallback(
     async (title: string) => {

@@ -1,8 +1,10 @@
 import { planCommit, validateUrl } from './inlineEditModel.js';
+import { useI18n } from '@extension/i18n';
 import { cn } from '@extension/ui';
 import { resolveKeyIntent } from '@src/hooks/modeMachine';
 import { useEffect, useRef, useState } from 'react';
 import type { CommitPlan, EditDraft } from './inlineEditModel.js';
+import type { LocalizedMessage } from '../lib/message.js';
 import type { FocusEvent as ReactFocusEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 interface InlineEditProps {
@@ -22,8 +24,10 @@ interface InlineEditProps {
  * 別名チップ列は非採用（別名編集は U9 の `AliasEditor` が担当。二重実装を避ける）。
  */
 export const InlineEdit = ({ original, onCommit, onCancel }: InlineEditProps) => {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<EditDraft>(original);
-  const [urlError, setUrlError] = useState<string | null>(null);
+  // 文言ではなくメッセージキーで保持し、描画時に翻訳する（ロケール変更に追従させるため）。
+  const [urlError, setUrlError] = useState<LocalizedMessage | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   // マウント時にタイトル入力へフォーカス + 全選択（リネームの主用途は書き換えのため）。
@@ -87,7 +91,7 @@ export const InlineEdit = ({ original, onCommit, onCancel }: InlineEditProps) =>
           value={draft.title}
           onChange={e => setDraft(prev => ({ ...prev, title: e.target.value }))}
           onKeyDown={handleKeyDown}
-          aria-label="タイトルを編集"
+          aria-label={t('popupInlineTitleLabel')}
           className="border-accent shadow-focus-ring text-ink h-[34px] flex-1 rounded-md border-[1.5px] bg-white px-2.5 text-[13px] font-medium outline-none"
         />
       </div>
@@ -97,27 +101,27 @@ export const InlineEdit = ({ original, onCommit, onCancel }: InlineEditProps) =>
           value={draft.url}
           onChange={e => handleUrlChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          aria-label="URLを編集"
+          aria-label={t('popupInlineUrlLabel')}
           aria-invalid={urlError !== null}
           className={cn(
             'bg-input-bg text-ink-2 h-8 w-full rounded-md border px-2.5 font-mono text-[12px] outline-none',
             urlError ? 'border-danger' : 'border-line-input',
           )}
         />
-        {urlError && <p className="text-danger mt-1 text-[11px]">{urlError}</p>}
+        {urlError && <p className="text-danger mt-1 text-[11px]">{t(urlError.key, urlError.substitutions)}</p>}
       </div>
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={onCancel}
           className="border-line text-ink-soft h-7 rounded-md border px-3 text-[12px] font-bold">
-          キャンセル
+          {t('commonCancel')}
         </button>
         <button
           type="button"
           onClick={commit}
           className="bg-accent h-7 rounded-md px-3 text-[12px] font-bold text-white">
-          保存
+          {t('commonSave')}
         </button>
       </div>
     </div>

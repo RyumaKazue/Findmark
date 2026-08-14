@@ -5,10 +5,14 @@
  * `InlineEdit`（React 層）とユニットテスト（`inlineEditModel.test.ts`）の双方から使う。
  * 既存の pure module（`aliasEditorModel.ts`/`folderTreeModel.ts`/`modeMachine.ts`）に倣い、
  * 宣言は非 export とし、ファイル末尾で export をまとめる。
+ *
+ * U18: エラー文言は翻訳済み文字列ではなく `LocalizedMessage`（メッセージキー）で返し、UI 層が翻訳する。
  */
 
-/** URL 検証結果（判別可能ユニオン）。`ok:false` の `message` はそのままインラインエラーに表示する。 */
-type UrlValidation = { ok: true } | { ok: false; message: string };
+import type { LocalizedMessage } from '../lib/message.js';
+
+/** URL 検証結果（判別可能ユニオン）。`ok:false` の `message` は UI 層で翻訳してインラインエラーに表示する。 */
+type UrlValidation = { ok: true } | { ok: false; message: LocalizedMessage };
 
 /** ブックマークとして保存させないスキーム（スクリプト実行につながるため・development-guidelines）。 */
 const FORBIDDEN_SCHEMES = ['javascript:', 'data:'];
@@ -21,16 +25,16 @@ const FORBIDDEN_SCHEMES = ['javascript:', 'data:'];
 const validateUrl = (raw: string): UrlValidation => {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
-    return { ok: false, message: 'URLを入力してください' };
+    return { ok: false, message: { key: 'popupErrorUrlRequired' } };
   }
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    return { ok: false, message: 'URLの形式が正しくありません' };
+    return { ok: false, message: { key: 'popupErrorUrlInvalid' } };
   }
   if (FORBIDDEN_SCHEMES.includes(parsed.protocol)) {
-    return { ok: false, message: 'このスキームのURLは登録できません' };
+    return { ok: false, message: { key: 'popupErrorUrlScheme' } };
   }
   return { ok: true };
 };
@@ -48,7 +52,7 @@ interface EditDraft {
  * - `update`: 変化したフィールドのみを含む更新内容。
  */
 type CommitPlan =
-  | { type: 'invalid'; message: string }
+  | { type: 'invalid'; message: LocalizedMessage }
   | { type: 'unchanged' }
   | { type: 'update'; title?: string; url?: string };
 

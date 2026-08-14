@@ -1,7 +1,7 @@
 {
   "name": "chrome-extension",
-  "version": "0.5.0",
-  "description": "chrome extension - core settings",
+  "version": "1.0.0",
+  "description": "Findmark - core settings (manifest / service worker)",
   "type": "module",
   "private": true,
   "sideEffects": false,

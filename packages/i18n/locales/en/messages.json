@@ -1,31 +1,400 @@
 {
-  "extensionDescription": {
-    "description": "Extension description",
-    "message": "A bookmark search extension you find by your own aliases. No dictionaries—just your own names for instant results. Zero external communication."
-  },
   "extensionName": {
     "description": "Extension name",
     "message": "Findmark"
   },
-  "toggleTheme": {
-    "message": "Toggle theme"
+  "extensionDescription": {
+    "description": "Extension description",
+    "message": "A bookmark search extension you find by your own aliases. No dictionaries—just your own names for instant results. Zero external communication."
   },
-  "injectButton": {
-    "message": "Click to inject Content Scripts"
+  "commandOpenPopup": {
+    "description": "Keyboard shortcut description for opening the popup",
+    "message": "Open the Findmark search popup"
   },
-  "greeting": {
-    "description": "Greeting message",
-    "message": "Hello, My name is $NAME$",
-    "placeholders": {
-      "name": {
-        "content": "$1",
-        "example": "John Doe"
-      }
-    }
+  "commonAll": {
+    "message": "All"
   },
-  "hello": {
-    "description": "Placeholder example",
-    "message": "Hello $1"
+  "commonLoading": {
+    "message": "Loading…"
+  },
+  "commonClose": {
+    "message": "Close"
+  },
+  "commonSave": {
+    "message": "Save"
+  },
+  "commonCancel": {
+    "message": "Cancel"
+  },
+  "commonDone": {
+    "message": "Done"
+  },
+  "commonDelete": {
+    "message": "Delete"
+  },
+  "commonMove": {
+    "message": "Move"
+  },
+  "commonRestore": {
+    "message": "Restore"
+  },
+  "commonSelect": {
+    "message": "Select"
+  },
+  "commonDeselect": {
+    "message": "Deselect"
+  },
+  "commonCopy": {
+    "message": "Copy"
+  },
+  "commonCopied": {
+    "message": "Copied"
+  },
+  "commonSaved": {
+    "message": "Saved"
+  },
+  "commonRootFolder": {
+    "description": "Shown instead of a folder path when the item sits directly under the root",
+    "message": "(top level)"
+  },
+  "popupSearchPlaceholder": {
+    "message": "Search bookmarks..."
+  },
+  "popupSearchLabel": {
+    "message": "Search bookmarks"
+  },
+  "popupAddCurrentTitle": {
+    "message": "Add the current page (Ctrl/Cmd+D)"
+  },
+  "popupAddCurrentButton": {
+    "message": "Add"
+  },
+  "popupFolderTreeLabel": {
+    "message": "Folders"
+  },
+  "popupTreeExpand": {
+    "message": "Expand"
+  },
+  "popupTreeCollapse": {
+    "message": "Collapse"
+  },
+  "popupTreeMore": {
+    "description": "$1 = number of hidden folders",
+    "message": "$1 more…"
+  },
+  "popupEmptyNoResults": {
+    "message": "No matching bookmarks"
+  },
+  "popupMetaScopedQuery": {
+    "description": "$1 = scope path, $2 = query, $3 = result count",
+    "message": "“$2” in $1 — $3 results"
+  },
+  "popupMetaScopedBrowse": {
+    "description": "$1 = scope path, $2 = result count",
+    "message": "Directly in $1 — $2 items"
+  },
+  "popupRowEdit": {
+    "message": "Edit (F2)"
+  },
+  "popupRowDelete": {
+    "message": "Delete (Del)"
+  },
+  "popupRowAliasEdit": {
+    "message": "Click to edit aliases"
+  },
+  "popupRowAddAlias": {
+    "message": "+ Alias"
+  },
+  "popupAliasPlaceholder": {
+    "message": "Add an alias…"
+  },
+  "popupAliasInputLabel": {
+    "description": "$1 = bookmark URL",
+    "message": "Edit aliases ($1)"
+  },
+  "popupAliasChipEdit": {
+    "message": "Click to edit"
+  },
+  "popupAliasChipRemove": {
+    "description": "$1 = alias text",
+    "message": "Remove alias “$1”"
+  },
+  "popupAliasHint": {
+    "message": "Enter to add / Backspace to remove the last chip"
+  },
+  "popupInlineTitleLabel": {
+    "message": "Edit title"
+  },
+  "popupInlineUrlLabel": {
+    "message": "Edit URL"
+  },
+  "popupMoveDialogLabel": {
+    "message": "Choose a folder to move to"
+  },
+  "popupFolderFilterPlaceholder": {
+    "message": "Filter by folder name…"
+  },
+  "popupFolderNoMatch": {
+    "message": "No matching folders"
+  },
+  "popupMoveCurrentLocation": {
+    "message": "Current location"
+  },
+  "popupBulkSelected": {
+    "description": "$1 = number of selected rows",
+    "message": "$1 selected"
+  },
+  "popupAddPanelLabel": {
+    "message": "Save the current page"
+  },
+  "popupAddPanelTitle": {
+    "message": "Save page"
+  },
+  "popupAddPanelRegistered": {
+    "message": "Already saved"
+  },
+  "popupAddPanelTitleField": {
+    "message": "Title"
+  },
+  "popupAddPanelFolderField": {
+    "message": "Folder"
+  },
+  "popupAddPanelAliasField": {
+    "message": "Aliases"
+  },
+  "popupAddPanelUnknownFolder": {
+    "message": "(Unknown folder)"
+  },
+  "popupUndoAction": {
+    "message": "Undo"
+  },
+  "popupUndoDeleted": {
+    "description": "$1 = bookmark title",
+    "message": "Deleted “$1”"
+  },
+  "popupUndoMoved": {
+    "description": "$1 = bookmark title",
+    "message": "Moved “$1”"
+  },
+  "popupUndoDeletedCount": {
+    "description": "$1 = number of deleted bookmarks",
+    "message": "Deleted $1 bookmarks"
+  },
+  "popupUndoMovedCount": {
+    "description": "$1 = number of moved bookmarks",
+    "message": "Moved $1 bookmarks"
+  },
+  "popupErrorEditFailed": {
+    "message": "Couldn't save your changes"
+  },
+  "popupErrorDeleteFailed": {
+    "message": "Couldn't delete this bookmark"
+  },
+  "popupErrorMoveFailed": {
+    "message": "Couldn't move this bookmark"
+  },
+  "popupErrorUndoFailed": {
+    "message": "Couldn't undo"
+  },
+  "popupErrorBulkMoveFailed": {
+    "message": "Some bookmarks couldn't be moved"
+  },
+  "popupErrorBulkDeleteFailed": {
+    "message": "Some bookmarks couldn't be deleted"
+  },
+  "popupErrorBulkUndoFailed": {
+    "message": "Some bookmarks couldn't be restored"
+  },
+  "popupErrorPageNotAddable": {
+    "message": "This page can't be saved"
+  },
+  "popupErrorAddCurrentFailed": {
+    "message": "Couldn't save the current page"
+  },
+  "popupErrorUrlRequired": {
+    "message": "Enter a URL"
+  },
+  "popupErrorUrlInvalid": {
+    "message": "That URL isn't valid"
+  },
+  "popupErrorUrlScheme": {
+    "message": "URLs with this scheme can't be saved"
+  },
+  "optionsTablistLabel": {
+    "message": "Options"
+  },
+  "optionsTabImportExport": {
+    "message": "Import / Export"
+  },
+  "optionsTabTrash": {
+    "message": "Trash"
+  },
+  "optionsTabSettings": {
+    "message": "Settings"
+  },
+  "optionsImportExportHeading": {
+    "message": "Import / Export"
+  },
+  "optionsExportHeading": {
+    "message": "Export"
+  },
+  "optionsExportJson": {
+    "message": "Export as Findmark JSON"
+  },
+  "optionsExportHtml": {
+    "message": "Export as standard HTML"
+  },
+  "optionsImportHeading": {
+    "message": "Import"
+  },
+  "optionsImportDescription": {
+    "message": "Choose a Findmark JSON (.json) or standard HTML (.html) file, then press [Run]."
+  },
+  "optionsImportChooseFile": {
+    "message": "Choose file"
+  },
+  "optionsImportNoFile": {
+    "message": "No file selected"
+  },
+  "optionsImportRun": {
+    "message": "Run"
+  },
+  "optionsImportRunning": {
+    "message": "Running…"
+  },
+  "optionsImportReportTotal": {
+    "description": "$1 = total number of imported entries",
+    "message": "Import results ($1 total)"
+  },
+  "optionsImportReportRow": {
+    "description": "$1 = row label, $2 = count",
+    "message": "$1: $2"
+  },
+  "optionsImportReportFailed": {
+    "description": "$1 = number of failed entries",
+    "message": "Failed: $1"
+  },
+  "optionsImportReportCreated": {
+    "message": "Created"
+  },
+  "optionsImportReportAliasMerged": {
+    "message": "Aliases merged"
+  },
+  "optionsImportReportSkipped": {
+    "message": "Skipped"
+  },
+  "optionsImportReportOverwritten": {
+    "message": "Overwritten"
+  },
+  "optionsImportReportKeptBoth": {
+    "message": "Kept both"
+  },
+  "optionsImportErrorFormat": {
+    "message": "Invalid file format (check format/version)"
+  },
+  "optionsImportErrorFailed": {
+    "message": "Import failed"
+  },
+  "optionsConflictDialogLabel": {
+    "message": "Resolve import conflict"
+  },
+  "optionsConflictHeading": {
+    "message": "A bookmark with the same URL already exists"
+  },
+  "optionsConflictCount": {
+    "description": "$1 = index of the conflict being resolved (1-based)",
+    "message": "Conflict #$1"
+  },
+  "optionsConflictExisting": {
+    "message": "Existing bookmark"
+  },
+  "optionsConflictIncoming": {
+    "message": "Imported data"
+  },
+  "optionsConflictApplyToAll": {
+    "message": "Apply this choice to the remaining conflicts"
+  },
+  "optionsConflictSkip": {
+    "message": "Skip"
+  },
+  "optionsConflictKeepBoth": {
+    "message": "Keep both"
+  },
+  "optionsConflictOverwrite": {
+    "message": "Overwrite"
+  },
+  "optionsTrashHeading": {
+    "message": "Trash"
+  },
+  "optionsTrashEmptyAll": {
+    "message": "Empty trash"
+  },
+  "optionsTrashDescription": {
+    "message": "Deleted bookmarks are kept here for a limited time (change the retention period in the Settings tab). Restoring puts them back in their original folder, recreating it if needed."
+  },
+  "optionsTrashEmpty": {
+    "message": "Trash is empty"
+  },
+  "optionsTrashItemCount": {
+    "description": "$1 = number of bookmarks inside a deleted folder",
+    "message": "($1 items)"
+  },
+  "optionsTrashDeletedAt": {
+    "description": "$1 = folder path, $2 = deletion date and time",
+    "message": "$1 · deleted $2"
+  },
+  "optionsTrashAliases": {
+    "description": "$1 = comma separated aliases",
+    "message": "Aliases: $1"
+  },
+  "optionsTrashErrorLoad": {
+    "message": "Couldn't load the trash"
+  },
+  "optionsTrashErrorRestore": {
+    "message": "Couldn't restore this item (check the original folder)"
+  },
+  "optionsTrashErrorDelete": {
+    "message": "Couldn't delete this item"
+  },
+  "optionsTrashErrorClear": {
+    "message": "Couldn't empty the trash"
+  },
+  "optionsSettingsHeading": {
+    "message": "Settings"
+  },
+  "optionsShortcutUnassignedHeading": {
+    "message": "The launch shortcut is not assigned"
+  },
+  "optionsShortcutUnassignedDescription": {
+    "message": "Another extension is already using the same keys, so Findmark's launch shortcut (Ctrl+Shift+F / Command+Shift+F) was left unassigned. Paste the URL below into the address bar and assign a shortcut to Findmark there (extensions cannot open that page directly)."
+  },
+  "optionsShortcutUrlLabel": {
+    "message": "URL of the keyboard shortcuts page"
+  },
+  "optionsShortcutCopyError": {
+    "message": "Couldn't copy the URL. Select the text above and copy it manually."
+  },
+  "optionsRetentionHeading": {
+    "message": "Trash retention period"
+  },
+  "optionsRetentionDescription": {
+    "message": "How long deleted bookmarks are kept in the trash. They are removed automatically after this period."
+  },
+  "optionsRetentionDays": {
+    "description": "$1 = number of days",
+    "message": "$1 days"
+  },
+  "optionsRetentionError": {
+    "message": "Couldn't save the retention period"
+  },
+  "optionsLocaleHeading": {
+    "message": "Display language"
+  },
+  "optionsLocaleDescription": {
+    "message": "The language used in the popup and this options page. When unset, your browser language is used."
+  },
+  "optionsLocaleError": {
+    "message": "Couldn't save the language setting"
   },
   "displayErrorInfo": {
     "message": "Error occur"

@@ -119,7 +119,7 @@ PRD「スコープ外」「将来的な機能(Post-MVP)」に従い、以下は�
 | U16 | trash | TrashStore(30日保持・件数/容量上限で古い順自動削除、フォルダは配下ツリーごと保存、`ensureFolderPath`で復元)と Options の TrashTab / SettingsTab(保持日数・locale)。**※Options のタブ切り替え機構を本単位で導入する**(U15 時点では `ImportExportTab` 単体のため意図的に見送った) | 12 | U4, U5, U10 | 削除が即時アンドゥ+30日ゴミ箱の2層 / 元パスへ復元(無ければ再作成) / 上限超過で古い順に退避 | `packages/storage/lib/impl/trashStore.ts`, `pages/options/src/components/TrashTab.tsx` |
 | U17 | service-worker | Service Worker: 起動時クリーンアップ(存在しないフォルダID・別名参照の掃除、**期限切れゴミ箱の掃除**を追加)、起動ショートカットの割り当て検証と Options での案内。**※`_execute_action` は Chrome 予約コマンドで `onCommand` に配信されないため、SW は「受信」ではなく `chrome.commands.getAll()` による割り当て検証を担う**(起動そのものは U1 の manifest が担う) | 前提(1,信頼性) | U4, U5 | 起動時に孤立参照を掃除 / ショートカットでpopup起動(未割り当て時は Options が `chrome://extensions/shortcuts` を案内) | `chrome-extension/src/background/`, `packages/storage/lib/impl/localStateStore.ts`, `pages/options/src/components/SettingsTab.tsx` |
 | U19 | popup-state-restore | ポップアップ状態の復元: フォーカス位置・フォルダスコープ・選択ブックマーク(**ID保持**)・検索クエリを `storage.local`(`PopupSession`)へ**変更のたびに即時(debounce付き)** 保存し、次回起動時に復元。索引構築完了後に適用、削除済み参照は当該項目のみ既定値へフォールバック、復帰時のクエリ全選択 | 13 | U8a, U11 | 4項目が保存・復元される / 初回起動時は既定値(左ペイン・すべて・先頭行・空) / 削除済みフォルダは「すべて」へ・削除済みブックマークは先頭行へ倒れフォーカス位置は保存値のまま / 選択行がIDで保持されインデックスのズレが起きない / 印字文字での復帰時に既存クエリが全選択される / 200ms要件を満たす(既定値を先に適用) | `packages/storage/lib/types.ts`, `packages/storage/lib/impl/localStateStore.ts`, `pages/popup/src/Popup.tsx` 他 |
-| U18 | release-prep | リリース準備: `_locales`(ja既定/en)多言語対応の全UI適用(**U17 で追加した Options のショートカット案内文を含む**)、アイコン(128px等)、スクリーンショット、ストア説明文(ja/en。**起動ショートカットが未割り当てになりうる旨の記載を検討**)、プライバシーポリシー(データ収集なし宣言)、`favicon`権限の警告有無確認 | リリース準備タスク | U7〜U17, U19 | 全UIがi18n化 / ストア提出物が揃う / 権限説明とプライバシーポリシー整合 | `packages/i18n/`, `chrome-extension/public/`, ストア素材 |
+| U18 | release-prep | リリース準備: `_locales`(ja既定/en)多言語対応の全UI適用(**U17 で追加した Options のショートカット案内文を含む**)、アイコン(128px等)、スクリーンショット、ストア説明文(ja/en。**起動ショートカットが未割り当てになりうる旨の記載を検討**)、プライバシーポリシー(データ収集なし宣言)、`favicon`権限の警告有無確認。**実装時の追加スコープ**: `UserSettings.locale` を実際にUIへ適用するランタイム翻訳層(`chrome.i18n` はブラウザUI言語しか見ないため)、提出zipのクリーンアップ(未使用のボイラープレートページ削除)、バージョンを 1.0.0 へ | リリース準備タスク | U7〜U17, U19 | 全UIがi18n化 / ストア提出物が揃う / 権限説明とプライバシーポリシー整合 | `packages/i18n/`, `chrome-extension/public/`, `docs/store/` |
 
 ---
 
@@ -208,15 +208,15 @@ graph TD
 - [x] U1〜U17（機能1〜12の実装 + 基盤 + 信頼性）が全て完了している
 - [x] U6a / U8a（キーボード完結ナビゲーションの仕様変更対応）が完了している
 - [x] U19（ポップアップ状態の復元・機能13）が完了している
-- [ ] U18（リリース準備）が完了している
+- [x] U18（リリース準備）が完了している（**スクリーンショットの実撮影・デベロッパー登録・プライバシーポリシーの公開URL用意はリリース実務として人手で行う**。手順は [store/README.md](./store/README.md)）
 
 ### 横断的な受け入れ基準（PRD 非機能要件 / 成功指標）
 - [ ] **検索到達時間**: 起動→目的のブックマークを開くまで平均5秒以内(タスク型UTで検証。最重要受け入れ基準)
 - [ ] **パフォーマンス**: 起動→検索フォーカス200ms以内 / 1,000件で1文字あたり再描画100ms以内 / 別名upsert 100ms以内
-- [ ] **プライバシー**: 外部通信ゼロ(`fetch`/XHR/WebSocket なし)/ 権限は `bookmarks`・`storage`・`activeTab`・`favicon` の4つのみ / host permission なし
+- [x] **プライバシー**: 外部通信ゼロ(`fetch`/XHR/WebSocket なし)/ 権限は `bookmarks`・`storage`・`activeTab`・`favicon` の4つのみ / host permission なし（U18 でソース・製品バンドル双方を静的確認。結果は [store/README.md](./store/README.md)「4. 外部通信ゼロの確認」。**`favicon` はインストール時に警告が出る**点も同書に記録）
 - [ ] **信頼性**: 削除・移動を含む全操作でデータ損失ゼロ(即時アンドゥ + 30日ゴミ箱の二重防御)
 - [ ] **品質ゲート**: `pnpm type-check` / `pnpm lint` / ユニットテスト(shared・storage 80%目標) / E2E 主要導線がパス
-- [ ] **国際化**: `_locales`(ja既定/en)で主要UIが多言語化されている
+- [x] **国際化**: `_locales`(ja既定/en)で主要UIが多言語化されている（U18。Popup/Options の全UI文言 + manifest。Options の「表示言語」で切替可能）
 
 ---
 
@@ -261,4 +261,4 @@ graph TD
 | U16 | trash | 12 | ✅ 完了 (2026-08-14) | `.steering/20260814-trash/` |
 | U17 | service-worker | 前提(1,信頼性) | ✅ 完了 (2026-08-14) | `.steering/20260814-service-worker/` |
 | U19 | popup-state-restore | 13 | ✅ 完了 (2026-08-08) | `.steering/20260807-popup-state-restore/` |
-| U18 | release-prep | リリース準備 | 未着手 | - |
+| U18 | release-prep | リリース準備 | ✅ 完了 (2026-08-14) | `.steering/20260814-release-prep/` |
