@@ -202,6 +202,7 @@
 *編集モード*
 - [ ] LIST / FOLDER_TREE / INLINE_EDIT / ALIAS_EDIT / DRAG / PANEL の各モードで ↑↓ / Enter / Escape の挙動が定義通りに切り替わる
 - [ ] LISTモードで F2/Ctrl+E(リネーム)、Ctrl+;(別名編集)、Ctrl+M(移動)、Delete(削除)、Ctrl+D(現在ページ追加)が動作する
+- [ ] 行に紐づかない操作(Ctrl+D=現在ページ追加、Ctrl+M=一括移動、Ctrl/Cmd+Z=アンドゥ、Escape=選択解除)は FOLDER_TREEモード(起動直後の既定フォーカス)でも動作する
 
 **優先度**: P0(必須)
 
@@ -323,7 +324,7 @@
 ```
 文字入力           インクリメンタル検索
 ← →               キャレット移動(ペイン移動には使わない)
-↑ ↓               フォーカスが外れ、同時に選択行が1つ移動
+↑ ↓               フォーカスが外れ、同時に選択行が1つ移動(端で循環。右ペインと同じ規則)
 Enter              選択行を現在のタブで開く
 Ctrl/Cmd + Enter   選択行を新しいタブで開く
 Escape             1段階だけ戻る
@@ -332,7 +333,7 @@ Escape             1段階だけ戻る
 **右ペイン(ブックマーク一覧)**
 
 ```
-↑ ↓               選択行の移動(端では何もしない)
+↑ ↓               選択行の移動(端で循環。先頭で ↑ → 末尾 / 末尾で ↓ → 先頭)
 ←                  左ペインへ
 Enter              選択行を現在のタブで開く
 Ctrl/Cmd + Enter   選択行を新しいタブで開く
@@ -352,20 +353,22 @@ Home               「すべて」へ戻る
 Escape             検索ボックスへ戻る
 ```
 
-#### 編集・整理(LISTモード)
+#### 編集・整理
 
 ```
-F2 / Ctrl+E        リネーム(INLINE_EDIT へ)
+F2 / Ctrl+E        リネーム(INLINE_EDIT へ)                      ※LISTのみ
 Tab / Shift+Tab    INLINE_EDIT: タイトル⇄URL間の移動(確定・離脱はしない)
-Ctrl+;             別名編集(ALIAS_EDIT へ)
-Ctrl+M             移動(フォルダ選択パネル)
-Delete             削除(アンドゥ付き。検索ボックスにフォーカスがある間は前方削除のまま)
-Ctrl/Cmd + Z        直前の削除をアンドゥ(5秒以内のみ有効。トースト表示中に限定)
-Ctrl+D             現在のページを追加
+Ctrl+;             別名編集(ALIAS_EDIT へ)                       ※LISTのみ
+Ctrl+M             移動(フォルダ選択パネル)                       ※選択なし=単一移動はLISTのみ / 選択あり=一括移動はFOLDER_TREEでも可
+Delete             削除(アンドゥ付き。検索ボックスにフォーカスがある間は前方削除のまま)  ※LIST+右ペインのみ
+Ctrl/Cmd + Z        直前の削除をアンドゥ(5秒以内のみ有効。トースト表示中に限定)  ※FOLDER_TREEでも可
+Ctrl+D             現在のページを追加                             ※FOLDER_TREEでも可
 Ctrl/Cmd + クリック  個別選択の追加
 Shift + クリック     範囲選択
-Ctrl/Cmd + A        全件選択
+Ctrl/Cmd + A        全件選択                                     ※LIST+検索ボックス以外のみ
 ```
+
+> **「※」の読み方**: 対象がフォーカス中の結果行である操作は `LIST` モード限定。対象がチェック選択または対象なしの操作は、左ペイン(`FOLDER_TREE`)にフォーカスがあっても動作する。詳細は [functional-design.md](./functional-design.md)「画面遷移図」下の注記を参照。
 
 #### Escape の段階戻り
 

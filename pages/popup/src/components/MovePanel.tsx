@@ -140,7 +140,11 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
                   aria-disabled={c.disabled}
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
-                  onMouseEnter={() => setIndex(i)}
+                  // ホバー選択は `onMouseEnter` ではなく `onMouseMove` に結線する（`ResultRow` と同じ理由）。
+                  // `↑↓` で候補を送ると L77 の `scrollIntoView` がリストをスクロールさせるが、Chrome は
+                  // マウスを動かしていなくてもカーソル下の要素が変わった時点で `mouseenter` を発火するため、
+                  // キーボードで進めた候補が「カーソルが乗っているだけの候補」に引き戻されていた。
+                  onMouseMove={() => setIndex(i)}
                   onClick={() => confirmAt(i)}
                   className={cn(
                     'flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left',

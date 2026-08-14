@@ -92,6 +92,9 @@ type KeyIntent =
   | 'list:move-up'
   | 'list:move-down'
   | 'list:to-folder-tree'
+  // ↑ LIST の 4 インテントはいずれも端で循環する（`list-arrow-wrap`）。インデックスの計算そのものは
+  // 結果件数という UI 状態を要するため本モジュールには持たず、`listNavigationModel.moveSelectionIndex` が担う。
+  // 左ペイン（`folder:move-*`）は従来どおり端でクランプする（階層由来の並びのため循環させない）。
   // LIST 共通。
   | 'list:open'
   // FOLDER_TREE（U8a）。実行結線は U11（本単位は定義のみ）。
@@ -131,9 +134,10 @@ const hasCommandModifier = (e: KeyLike): boolean => Boolean(e.ctrlKey) || Boolea
  * `listFocus` は LIST 以外のモードでは参照されないため省略可能（既定 `'search'`）。U10 で
  * `InlineEdit` が `resolveKeyIntent('INLINE_EDIT', e)` を第3引数なしで呼ぶために追加した。
  * functional-design「既定モードのキー挙動（フォーカス位置別）」「編集モードのキー挙動」表に忠実:
- * - LIST + 検索ボックス: ↑↓=検索欄を離脱しつつ選択行を1つ動かす / ←→・Home=none（ネイティブのキャレット移動・
+ * - LIST + 検索ボックス: ↑↓=検索欄を離脱しつつ選択行を1つ動かす（端で循環）/ ←→・Home=none（ネイティブのキャレット移動・
  *   クエリ途中の修正を温存するため、意図的に何も割り当てない）/ Enter=開く / Escape=段階戻り（起点）
- * - LIST + 右ペイン: ↑↓=選択行の移動 / ←=左ペインへ / →=none / Enter=開く / Escape=段階戻り（起点）
+ * - LIST + 右ペイン: ↑↓=選択行の移動（端で循環: 先頭で ↑ → 末尾 / 末尾で ↓ → 先頭）/ ←=左ペインへ / →=none /
+ *   Enter=開く / Escape=段階戻り（起点）
  * - FOLDER_TREE: ↑↓=フォルダ間移動 / ←=親フォルダへ / →=右ペインへ / Enter=展開トグル / Home=「すべて」へ /
  *   Escape=段階戻り（起点）。実行結線は U11（本単位はインテントの定義のみ）
  * - INLINE_EDIT: Enter=確定 / Escape=破棄 / 上下=ネイティブのキャレット移動（none）

@@ -13,6 +13,7 @@ import { ResultList } from '@src/components/ResultList';
 import { buildResultMetaLabel } from '@src/components/resultMetaModel';
 import { SearchHeader } from '@src/components/SearchHeader';
 import { Toast } from '@src/components/Toast';
+import { moveSelectionIndex } from '@src/hooks/listNavigationModel';
 import {
   isSearchFirstExempt,
   isSearchFirstTriggerKey,
@@ -144,7 +145,6 @@ const Popup = () => {
     setSelectedIndex(prev => Math.min(Math.max(0, prev), Math.max(0, results.length - 1)));
   }, [results.length]);
 
-  const lastIndex = Math.max(0, results.length - 1);
   // 現在の表示結果の並び順（Ctrl/Cmd+A の全件選択・Shift+クリックの範囲選択の基準・U13）。
   const orderedIds = useMemo(() => results.map(r => r.node.id), [results]);
   // 選択中のブックマーク（一括操作の対象・U13）。クエリ/スコープ変更で selection を clear するため常に整合する。
@@ -194,13 +194,15 @@ const Popup = () => {
 
   // 検索欄を離脱し、同時に選択行を1つ動かす（U8a）。blur() でキャレットを外すことで、以降 ←→ を
   // ペイン移動に使えるようにする（検索ボックスにフォーカスがある間は ←→ をキャレット移動専用に保つため）。
+  // 移動は右ペインの ↑↓ と同じ循環規則（`moveSelectionIndex`）に従う。LIST 内でフォーカス位置により
+  // 端の挙動が変わる非対称を避けるため（`list-arrow-wrap`）。
   const leaveSearch = useCallback(
     (delta: -1 | 1) => {
       setListFocus('result');
       searchInputRef.current?.blur();
-      setSelectedIndex(i => Math.min(Math.max(i + delta, 0), lastIndex));
+      setSelectedIndex(i => moveSelectionIndex(i, delta, results.length));
     },
-    [lastIndex],
+    [results.length],
   );
 
   // U19: 復元したフォーカス位置を実際のモード/DOM フォーカスへ適用する。既定モードは FOLDER_TREE のため
@@ -397,8 +399,11 @@ const Popup = () => {
       return;
     }
     setBulkMovePanel(true);
+    // `handleOpenAddCurrent` と同じ理由で LIST を経由する（`ENTER_PANEL` は LIST からのみ有効なため、
+    // FOLDER_TREE から直接呼ぶと現状維持に倒れ、一括操作バーの「移動」を押しても何も起きない）。
+    exitToList();
     enterPanel();
-  }, [selectedItems.length, enterPanel]);
+  }, [selectedItems.length, exitToList, enterPanel]);
 
   // パネルでフォルダを確定 → 移動して検索ボックスへ戻る（フルパスは候補が保持している値をそのまま使う）。
   const handleMoveConfirm = useCallback(
@@ -435,9 +440,15 @@ const Popup = () => {
     const ok = await addCurrent.open();
     if (ok) {
       setAddCurrentPanelOpen(true);
+      // `modeReducer` は PANEL への遷移を LIST からのみ許可するため、FOLDER_TREE から開く場合は一度 LIST を
+      // 経由する（同一 reducer への dispatch はキュー順に適用されるので FOLDER_TREE → LIST → PANEL になる）。
+      // これが無いと `enterPanel()` が現状維持に倒れ、登録だけ済んでパネルが表示されない
+      // （U11 で起動直後が FOLDER_TREE になって以降、ヘッダー「＋追加」/ Ctrl+D の主要導線で発生していた）。
+      // 閉じるときは `closeAddCurrentPanel` が `focusSearch()` で検索ボックスへ戻すため、左ペインへは復帰しない。
+      exitToList();
       enterPanel();
     }
-  }, [foldersLoaded, addCurrent, enterPanel]);
+  }, [foldersLoaded, addCurrent, exitToList, enterPanel]);
 
   // パネルを閉じる（Escape / 背景クリック / [完了]）共通処理。登録自体は取り消さないが、次回 open() が
   // 新しい entry で確実に上書きするよう、表示用の下書き（entry）はここでリセットする（design.md の
@@ -517,6 +528,27 @@ const Popup = () => {
         return;
       }
 
+      // Ctrl(Cmd)+D: 現在のページを登録する（U14）。**対象行を問わない操作**のため、行に紐づく他の
+      // ショートカット（Ctrl+M / F2 / Delete 等）と違い LIST 限定にしない。U11 で起動直後の既定モードが
+      // FOLDER_TREE になったため、LIST ブランチの内側に置いたままだと「ポップアップを開いた直後の Ctrl+D が
+      // 効かない」という主要導線の欠落になる。自前の文字入力 UI を持つモード（INLINE_EDIT/ALIAS_EDIT/
+      // PANEL/DRAG）では横取りしない（アンドゥと同じ `isSearchFirstExempt` を再利用する）。
+      if (resolveShortcutIntent(e) === 'add-current' && !isSearchFirstExempt(currentMode)) {
+        e.preventDefault();
+        void handleOpenAddCurrent();
+        return;
+      }
+
+      // Ctrl(Cmd)+M（選択中）: 一括移動パネルを開く（U13）。**対象がチェック選択そのもの**でフォーカス位置に
+      // 依存しないため、Ctrl+D と同じく LIST 限定にしない。一括操作バー（`BulkActionBar`）は選択さえあれば
+      // モードを問わず表示されるので、FOLDER_TREE でチェックした直後にキーでもボタンでも移動できる必要がある。
+      // 選択が無い場合の単一行移動は「フォーカス中の結果行」が対象のため、下の LIST ブランチに残す。
+      if (resolveShortcutIntent(e) === 'panel' && selectionCount > 0 && !isSearchFirstExempt(currentMode)) {
+        e.preventDefault();
+        openBulkMovePanel();
+        return;
+      }
+
       if (currentMode === 'LIST') {
         // モード入口/行操作ショートカット（U8・U10）。
         const shortcutIntent = resolveShortcutIntent(e);
@@ -530,14 +562,11 @@ const Popup = () => {
           enterInlineEditAt(selectedIndex);
           return;
         }
-        // Ctrl(Cmd)+M: フォルダ選択パネルを開く。選択中（複数選択）は一括移動パネルへ（U13）。
+        // Ctrl(Cmd)+M: フォルダ選択パネルを開く（フォーカス中の結果行が対象）。
+        // 選択中（複数選択）の一括移動は上の共通ブロックが処理済みのため、ここへは到達しない。
         if (shortcutIntent === 'panel' && results.length > 0) {
           e.preventDefault();
-          if (selectionCount > 0) {
-            openBulkMovePanel();
-          } else {
-            enterPanel();
-          }
+          enterPanel();
           return;
         }
         // 検索ボックスにフォーカスがある間の Delete は文字の前方削除のまま（ブックマークを削除しない）。
@@ -558,12 +587,6 @@ const Popup = () => {
           selectAllRows(orderedIds);
           return;
         }
-        // Ctrl(Cmd)+D: 現在のページを登録する（U14）。対象行を問わない操作のため results.length に依存しない。
-        if (shortcutIntent === 'add-current') {
-          e.preventDefault();
-          void handleOpenAddCurrent();
-          return;
-        }
         const intent = resolveKey(e, listFocus);
         switch (intent) {
           case 'list:leave-search-up':
@@ -576,11 +599,11 @@ const Popup = () => {
             return;
           case 'list:move-up':
             e.preventDefault();
-            setSelectedIndex(i => Math.max(i - 1, 0));
+            setSelectedIndex(i => moveSelectionIndex(i, -1, results.length));
             return;
           case 'list:move-down':
             e.preventDefault();
-            setSelectedIndex(i => Math.min(i + 1, lastIndex));
+            setSelectedIndex(i => moveSelectionIndex(i, 1, results.length));
             return;
           case 'list:to-folder-tree':
             e.preventDefault();
@@ -712,7 +735,6 @@ const Popup = () => {
     currentMode,
     listFocus,
     resolveKey,
-    lastIndex,
     selectedIndex,
     openAt,
     handleEscapeStep,
