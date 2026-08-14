@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!--
+    Findmark の拡張アイコン（U18）。生成元はこの SVG で、PNG は `bash-scripts/generate_icons.mjs` が
+    headless Chrome で書き出す（外部サービス・追加 npm 依存なし）。
+    色は docs/design/README.md「デザイントークン」の accent（#4F6BED / hover #3A54C9）に準拠する。
+    16px でも輪郭が潰れないよう、要素は「角丸の下地 + 白いしおり」の2つだけに絞る。
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5C77F0" />
+      <stop offset="1" stop-color="#3A54C9" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" ry="28" fill="url(#bg)" />
+  <path d="M42 26h44a6 6 0 0 1 6 6v70a4 4 0 0 1-6.4 3.2L64 88.5 42.4 105.2A4 4 0 0 1 36 102V32a6 6 0 0 1 6-6z" fill="#FFFFFF" />
+</svg>

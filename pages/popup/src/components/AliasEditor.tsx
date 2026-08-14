@@ -6,6 +6,7 @@ import {
   removeAt,
   removeLast,
 } from './aliasEditorModel.js';
+import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -50,6 +51,7 @@ const normalize = (s: string): string => normalizer.normalizeText(s);
  * 表示・フォーカス・楽観更新（`onCommit`）・一時的な視覚効果（blink/上限フラッシュ）のみを担う。
  */
 export const AliasEditor = ({ url, initialAliases, matchedAliases, onCommit, onClose }: AliasEditorProps) => {
+  const { t } = useI18n();
   const [chips, setChips] = useState<string[]>(() => orderMatchedFirst(initialAliases, matchedAliases));
   const [input, setInput] = useState('');
   const [blinkIndex, setBlinkIndex] = useState<number | null>(null);
@@ -208,14 +210,14 @@ export const AliasEditor = ({ url, initialAliases, matchedAliases, onCommit, onC
               <button
                 type="button"
                 onClick={() => editChip(i)}
-                title="クリックで再編集"
+                title={t('popupAliasChipEdit')}
                 className="max-w-[160px] truncate">
                 {alias}
               </button>
               <button
                 type="button"
                 onClick={() => removeChip(i)}
-                aria-label={`別名「${alias}」を削除`}
+                aria-label={t('popupAliasChipRemove', alias)}
                 className={cn(
                   'flex-none rounded-full px-[3px] leading-none',
                   isMatched ? 'text-white/80 hover:text-white' : 'text-accent-strong/70 hover:text-accent-strong',
@@ -232,15 +234,15 @@ export const AliasEditor = ({ url, initialAliases, matchedAliases, onCommit, onC
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           maxLength={MAX_ALIAS_LENGTH}
-          placeholder={chips.length === 0 ? '別名を追加…' : ''}
-          aria-label={`別名を編集（${url}）`}
+          placeholder={chips.length === 0 ? t('popupAliasPlaceholder') : ''}
+          aria-label={t('popupAliasInputLabel', url)}
           className="text-ink placeholder:text-ink-faint h-[18px] min-w-[80px] flex-1 bg-transparent text-[12px] outline-none"
         />
       </div>
 
       {/* ヒント文（左）と上限表示（右）。 */}
       <div className="flex items-center justify-between px-1">
-        <span className="text-ink-faint text-[11px]">Enter で確定 / Backspace で直前のチップを削除</span>
+        <span className="text-ink-faint text-[11px]">{t('popupAliasHint')}</span>
         <span className={cn('font-mono text-[11px]', limitFlash ? 'text-danger font-bold' : 'text-ink-faint')}>
           {chips.length} / {MAX_ALIASES}
         </span>

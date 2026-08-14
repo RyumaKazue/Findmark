@@ -1,6 +1,7 @@
 import { AliasEditor } from './AliasEditor.js';
 import { compressPath, formatPath } from './folderTreeModel.js';
 import { buildMoveCandidates, clampIndex, filterCandidates } from './movePanelModel.js';
+import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -53,6 +54,7 @@ export const AddCurrentPanel = ({
   onClose,
   actionsRef,
 }: AddCurrentPanelProps) => {
+  const { t } = useI18n();
   const [title, setTitle] = useState(entry.title);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderQuery, setFolderQuery] = useState('');
@@ -194,7 +196,7 @@ export const AddCurrentPanel = ({
       {/* 背景オーバーレイ（クリックで閉じる）。MovePanel と同じ native button 方式。 */}
       <button
         type="button"
-        aria-label="閉じる"
+        aria-label={t('commonClose')}
         tabIndex={-1}
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/20"
@@ -203,21 +205,21 @@ export const AddCurrentPanel = ({
       <div
         ref={dialogRef}
         role="dialog"
-        aria-label="現在のページを登録"
+        aria-label={t('popupAddPanelLabel')}
         onKeyDown={handleTrapTab}
         className="shadow-shell border-line relative flex max-h-[480px] w-[400px] flex-col gap-3 overflow-y-auto rounded-lg border bg-white p-4">
         <div className="flex items-center justify-between">
-          <span className="text-ink text-[13px] font-bold">ページを登録</span>
+          <span className="text-ink text-[13px] font-bold">{t('popupAddPanelTitle')}</span>
           {entry.alreadyRegistered && (
             <span className="bg-accent-bg text-accent-strong flex h-5 items-center gap-1 rounded-full px-2 text-[11px] font-medium">
               <span aria-hidden="true">★</span>
-              登録済み
+              {t('popupAddPanelRegistered')}
             </span>
           )}
         </div>
 
         <label className="flex flex-col gap-1">
-          <span className="text-ink-soft text-[11px]">タイトル</span>
+          <span className="text-ink-soft text-[11px]">{t('popupAddPanelTitleField')}</span>
           <input
             ref={titleInputRef}
             type="text"
@@ -229,7 +231,7 @@ export const AddCurrentPanel = ({
         </label>
 
         <div className="flex flex-col gap-1">
-          <span className="text-ink-soft text-[11px]">保存先フォルダ</span>
+          <span className="text-ink-soft text-[11px]">{t('popupAddPanelFolderField')}</span>
           {!folderOpen ? (
             <button
               type="button"
@@ -239,7 +241,7 @@ export const AddCurrentPanel = ({
               }}
               className="border-line hover:bg-pane-3 text-ink flex h-[34px] items-center gap-1.5 rounded-md border px-2.5 text-left text-[13px]">
               <span aria-hidden="true">📁</span>
-              <span className="flex-1 truncate">{folderLabel || '（不明なフォルダ）'}</span>
+              <span className="flex-1 truncate">{folderLabel || t('popupAddPanelUnknownFolder')}</span>
             </button>
           ) : (
             <div className="border-line flex flex-col overflow-hidden rounded-md border">
@@ -250,12 +252,12 @@ export const AddCurrentPanel = ({
                 onChange={e => setFolderQuery(e.target.value)}
                 onKeyDown={handleFolderKeyDown}
                 onBlur={() => setFolderOpen(false)}
-                placeholder="フォルダ名で絞り込み…"
+                placeholder={t('popupFolderFilterPlaceholder')}
                 className="border-line-row text-ink h-[34px] border-b px-2.5 text-[13px] outline-none"
               />
               <div className="max-h-[160px] overflow-y-auto p-1">
                 {filtered.length === 0 ? (
-                  <div className="text-ink-faint px-2 py-3 text-center text-[11.5px]">該当するフォルダがありません</div>
+                  <div className="text-ink-faint px-2 py-3 text-center text-[11.5px]">{t('popupFolderNoMatch')}</div>
                 ) : (
                   filtered.map((c, i) => (
                     <button
@@ -281,7 +283,7 @@ export const AddCurrentPanel = ({
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-ink-soft text-[11px]">別名</span>
+          <span className="text-ink-soft text-[11px]">{t('popupAddPanelAliasField')}</span>
           <AliasEditor
             url={entry.url}
             initialAliases={entry.aliases}
@@ -296,13 +298,13 @@ export const AddCurrentPanel = ({
             type="button"
             onClick={onDelete}
             className="border-danger-border text-danger flex h-[30px] items-center rounded-md border bg-white px-3 text-[12px] font-bold">
-            削除
+            {t('commonDelete')}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="bg-accent flex h-[30px] items-center rounded-md px-4 text-[12px] font-bold text-white">
-            完了
+            {t('commonDone')}
           </button>
         </div>
       </div>

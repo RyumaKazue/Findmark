@@ -482,10 +482,25 @@ Ctrl/Cmd + A        全件選択
 
 ## リリース準備タスク
 
-- [ ] アイコン(128px 等)
-- [ ] スクリーンショット
-- [ ] ストア説明文(日本語 / 英語)
-- [ ] `_locales` による多言語対応
-- [ ] プライバシーポリシー(データ収集なしの宣言)
-- [ ] Chrome Web Store デベロッパー登録($5、一度きり)
-- [ ] `favicon` 権限の警告表示有無を現行ドキュメントで確認
+> 提出物の実体は [store/](./store/) に置く（掲載情報・プライバシーポリシー・撮影手順・提出チェックリスト）。U18 で整備した。
+
+- [x] アイコン(128px 等) — 16/32/48/128 を `chrome-extension/public/` に用意(生成元 `chrome-extension/icons/icon.svg`・再生成は `node bash-scripts/generate_icons.mjs`)
+- [ ] スクリーンショット — 撮影手順は [store/screenshots.md](./store/screenshots.md)。**実撮影はリリース実務(人手)**
+- [x] ストア説明文(日本語 / 英語) — [store/listing-ja.md](./store/listing-ja.md) / [store/listing-en.md](./store/listing-en.md)
+- [x] `_locales` による多言語対応 — `packages/i18n/locales/{ja,en}`。Popup/Options の全UI文言に適用済み(U18)
+- [x] プライバシーポリシー(データ収集なしの宣言) — [store/privacy-policy-ja.md](./store/privacy-policy-ja.md) / [store/privacy-policy-en.md](./store/privacy-policy-en.md)。**公開 URL の用意は人手**
+- [ ] Chrome Web Store デベロッパー登録($5、一度きり) — 外部手続きのため人手
+- [x] `favicon` 権限の警告表示有無を現行ドキュメントで確認 — **警告は表示される**(下記)
+
+### 権限の警告表示(2026-08-14 確認・U18)
+
+Chrome for Developers「Declare permissions(permissions list)」の記載に基づく確認結果。
+
+| 権限 | インストール時の警告 |
+|---|---|
+| `bookmarks` | あり: 「ブックマークの読み取りと変更」 |
+| `favicon` | **あり**: 「アクセスしたウェブサイトのアイコンの読み取り」 |
+| `storage` | なし |
+| `activeTab` | なし |
+
+`favicon` は警告を伴うため、ストア掲載文とプライバシーポリシーで「ページの内容や閲覧履歴にはアクセスしない」ことを明示する([store/listing-ja.md](./store/listing-ja.md) 「権限について」)。実機での最終確認手順は [store/README.md](./store/README.md) に記載する。

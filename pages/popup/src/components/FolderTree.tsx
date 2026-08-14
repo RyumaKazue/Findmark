@@ -8,6 +8,7 @@ import {
   rowKey,
 } from './folderTreeModel.js';
 import { bookmarkService, localStateStore } from '../services.js';
+import { useI18n } from '@extension/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderTreeNode, TreeRow } from './folderTreeModel.js';
 import type { RefObject } from 'react';
@@ -82,6 +83,7 @@ export const FolderTree = ({
   dropTargetId = null,
   ready = true,
 }: FolderTreeProps) => {
+  const { t } = useI18n();
   const [folders, setFolders] = useState<FolderTreeNode[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   // 「さらに N 件…」で残りを表示した親フォルダ ID（非永続。開くたびリセット）。
@@ -298,7 +300,12 @@ export const FolderTree = ({
   return (
     // 縦横スクロール。深い階層/長い名前はスライド（横スクロール）で全表示する。
     // tabIndex=-1 で実 DOM フォーカスを受け、キー処理は Popup の document リスナーが担う。
-    <div ref={rootRef} role="tree" aria-label="フォルダ" tabIndex={-1} className="h-full overflow-auto outline-none">
+    <div
+      ref={rootRef}
+      role="tree"
+      aria-label={t('popupFolderTreeLabel')}
+      tabIndex={-1}
+      className="h-full overflow-auto outline-none">
       <div className="flex w-max min-w-full flex-col gap-[1px] px-2 py-3">
         {/* 復元適用前（!ready）は行を描画しない。既定スコープ「すべて」でのフラッシュを避ける（U19）。 */}
         {(ready ? rows : []).map(row => {

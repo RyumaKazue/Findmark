@@ -1,7 +1,9 @@
 import { ConflictDialog } from './ConflictDialog.js';
+import { useI18n } from '@extension/i18n';
 import { InvalidImportFormatError, isMyBookmarkSearchFile } from '@extension/shared';
 import { importExportService } from '@src/services';
 import { useRef, useState } from 'react';
+import type { MessageKey } from '@extension/i18n';
 import type { ConflictResolution, ConflictResolver, ImportBookmark, ImportReport } from '@extension/shared';
 import type { BookmarkNode } from '@extension/storage';
 import type { ChangeEvent } from 'react';
@@ -26,12 +28,12 @@ const download = (filename: string, content: string, mimeType: string): void => 
   URL.revokeObjectURL(url);
 };
 
-const REPORT_ROWS: { key: keyof Omit<ImportReport, 'total' | 'errors'>; label: string }[] = [
-  { key: 'created', label: '新規作成' },
-  { key: 'aliasMerged', label: '別名マージ' },
-  { key: 'skipped', label: 'スキップ' },
-  { key: 'overwritten', label: '上書き' },
-  { key: 'keptBoth', label: '両方残す' },
+const REPORT_ROWS: { key: keyof Omit<ImportReport, 'total' | 'errors'>; labelKey: MessageKey }[] = [
+  { key: 'created', labelKey: 'optionsImportReportCreated' },
+  { key: 'aliasMerged', labelKey: 'optionsImportReportAliasMerged' },
+  { key: 'skipped', labelKey: 'optionsImportReportSkipped' },
+  { key: 'overwritten', labelKey: 'optionsImportReportOverwritten' },
+  { key: 'keptBoth', labelKey: 'optionsImportReportKeptBoth' },
 ];
 
 /**
@@ -47,9 +49,11 @@ const REPORT_ROWS: { key: keyof Omit<ImportReport, 'total' | 'errors'>; label: s
  * 待つ `ConflictResolver` を実装する。
  */
 export const ImportExportTab = () => {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 文言ではなくメッセージキーで保持し、表示中に表示言語を切り替えても再翻訳されるようにする（U18）。
+  const [errorKey, setErrorKey] = useState<MessageKey | null>(null);
   const [conflict, setConflict] = useState<PendingConflict | null>(null);
   /** 選択済みのファイル（未選択は null）。[実行] を押すまでインポートは走らせない。 */
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -98,7 +102,7 @@ export const ImportExportTab = () => {
     }
     setSelectedFile(file);
     // 前回の実行結果は選び直した時点で古くなるためクリアする。
-    setError(null);
+    setErrorKey(null);
     setReport(null);
   };
 
@@ -106,7 +110,7 @@ export const ImportExportTab = () => {
     if (!selectedFile) {
       return;
     }
-    setError(null);
+    setErrorKey(null);
     setReport(null);
     setBusy(true);
     conflictCountRef.current = 0;
@@ -122,11 +126,7 @@ export const ImportExportTab = () => {
     } catch (err) {
       console.error('[ImportExportTab] インポートに失敗しました:', err);
       // functional-design「エラーハンドリング」: パース失敗は中断・専用メッセージ。
-      setError(
-        err instanceof InvalidImportFormatError
-          ? 'ファイル形式が不正です(format/version を確認)'
-          : 'インポートに失敗しました',
-      );
+      setErrorKey(err instanceof InvalidImportFormatError ? 'optionsImportErrorFormat' : 'optionsImportErrorFailed');
     } finally {
       setBusy(false);
     }
@@ -134,32 +134,30 @@ export const ImportExportTab = () => {
 
   return (
     <div className="mx-auto max-w-[640px] p-6">
-      <h1 className="text-ink mb-4 text-[18px] font-bold">インポート / エクスポート</h1>
+      <h1 className="text-ink mb-4 text-[18px] font-bold">{t('optionsImportExportHeading')}</h1>
 
       <section className="border-line mb-4 rounded-lg border p-4">
-        <h2 className="text-ink mb-2 text-[13px] font-bold">エクスポート</h2>
+        <h2 className="text-ink mb-2 text-[13px] font-bold">{t('optionsExportHeading')}</h2>
         {/* 枠内で2つのボタンを等幅・等間隔に配置する（grid-cols-2 + gap）。 */}
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => void handleExportJson()}
             className="bg-accent flex h-9 w-full items-center justify-center rounded-md px-4 text-[12.5px] font-bold text-white">
-            独自JSONをエクスポート
+            {t('optionsExportJson')}
           </button>
           <button
             type="button"
             onClick={() => void handleExportHtml()}
             className="border-line hover:bg-pane-3 flex h-9 w-full items-center justify-center rounded-md border px-4 text-[12.5px] font-medium">
-            標準HTMLをエクスポート
+            {t('optionsExportHtml')}
           </button>
         </div>
       </section>
 
       <section className="border-line rounded-lg border p-4">
-        <h2 className="text-ink mb-2 text-[13px] font-bold">インポート</h2>
-        <p className="text-ink-soft mb-2 text-[11.5px]">
-          独自JSON(.json)または標準HTML(.html)のファイルを選択し、[実行]を押してください。
-        </p>
+        <h2 className="text-ink mb-2 text-[13px] font-bold">{t('optionsImportHeading')}</h2>
+        <p className="text-ink-soft mb-2 text-[11.5px]">{t('optionsImportDescription')}</p>
 
         {/* 実体の input は隠し、下のボタンから click() して選択ダイアログを開く（見た目を制御するため）。 */}
         <input ref={fileInputRef} type="file" accept=".json,.html" className="hidden" onChange={handleFileSelected} />
@@ -170,7 +168,7 @@ export const ImportExportTab = () => {
             disabled={busy}
             onClick={() => fileInputRef.current?.click()}
             className="border-line hover:bg-pane-3 text-ink flex h-9 flex-none items-center rounded-md border px-4 text-[12.5px] font-medium disabled:opacity-50">
-            ファイルを選択
+            {t('optionsImportChooseFile')}
           </button>
 
           {/* 選択状態の可視化: 未選択はグレーの補助テキスト、選択済みは accent の淡背景＋ファイル名で明示する。 */}
@@ -183,7 +181,7 @@ export const ImportExportTab = () => {
             </span>
           ) : (
             <span className="text-ink-faint flex h-9 flex-1 items-center px-1 text-[12.5px]">
-              ファイルが選択されていません
+              {t('optionsImportNoFile')}
             </span>
           )}
 
@@ -192,22 +190,22 @@ export const ImportExportTab = () => {
             disabled={busy || selectedFile === null}
             onClick={() => void handleImport()}
             className="bg-accent flex h-9 flex-none items-center rounded-md px-5 text-[12.5px] font-bold text-white disabled:opacity-40">
-            {busy ? '実行中…' : '実行'}
+            {busy ? t('optionsImportRunning') : t('optionsImportRun')}
           </button>
         </div>
 
-        {error && <p className="text-danger mt-3 text-[12.5px]">{error}</p>}
+        {errorKey && <p className="text-danger mt-3 text-[12.5px]">{t(errorKey)}</p>}
 
         {report && (
           <div className="border-line-row bg-pane-3 mt-4 rounded-md border p-3 text-[12.5px]">
-            <p className="text-ink font-bold">インポート結果（合計 {report.total}件）</p>
+            <p className="text-ink font-bold">{t('optionsImportReportTotal', String(report.total))}</p>
             <ul className="text-ink-soft mt-1 space-y-0.5">
               {REPORT_ROWS.map(row => (
-                <li key={row.key}>
-                  {row.label}: {report[row.key]}件
-                </li>
+                <li key={row.key}>{t('optionsImportReportRow', [t(row.labelKey), String(report[row.key])])}</li>
               ))}
-              {report.errors.length > 0 && <li className="text-danger">失敗: {report.errors.length}件</li>}
+              {report.errors.length > 0 && (
+                <li className="text-danger">{t('optionsImportReportFailed', String(report.errors.length))}</li>
+              )}
             </ul>
           </div>
         )}

@@ -1,4 +1,5 @@
 import { deleteRowsCore, moveRowsCore, undoDeleteRowsCore, undoMoveRowsCore } from './bulkActionsCore.js';
+import { useI18n } from '@extension/i18n';
 import { aliasStore, bookmarkService, searchEngine, trashStore } from '@src/services';
 import { useCallback, useMemo, useState } from 'react';
 import type { BulkDeleteTarget, BulkMoveTarget, DeleteDeps, MoveDeps } from './bulkActionsCore.js';
@@ -42,11 +43,15 @@ export interface UseRowActionsApi {
  * `register`（`useUndo` の返す関数）は呼び出し側から注入する。`useUndo` を本フック内で
  * 独立に呼ぶと、`Popup` 側の `useUndo`（トースト表示用）と別々に `UndoManager` を購読する
  * 2つの state ができてしまうため、単一の購読を共有する設計にしている。
+ *
+ * U18: アンドゥ文言・エラー文言は `useI18n().t` で翻訳した文字列として組み立てる（トースト表示は一時的で、
+ * 表示中のロケール変更に追従する必要がないため、キー保持ではなく確定文字列で持つ）。
  */
 export const useRowActions = (
   refresh: () => void,
   register: (label: string, undo: () => Promise<void>) => void,
 ): UseRowActionsApi => {
+  const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
 
   const commitEdit = useCallback(
@@ -79,11 +84,11 @@ export const useRowActions = (
         return true;
       } catch (e) {
         console.error('[useRowActions] 編集の保存に失敗しました:', e);
-        setError('編集内容を保存できませんでした');
+        setError(t('popupErrorEditFailed'));
         return false;
       }
     },
-    [refresh],
+    [refresh, t],
   );
 
   const deleteRow = useCallback(
@@ -100,7 +105,7 @@ export const useRowActions = (
         await bookmarkService.remove(id);
       } catch (e) {
         console.error('[useRowActions] 削除に失敗しました:', e);
-        setError('削除できませんでした');
+        setError(t('popupErrorDeleteFailed'));
         return false;
       }
 
@@ -125,7 +130,7 @@ export const useRowActions = (
       searchEngine.removeNode(id);
       refresh();
 
-      register(`「${title}」を削除しました`, async () => {
+      register(t('popupUndoDeleted', title), async () => {
         try {
           const parentId = await bookmarkService.ensureFolderPath(folderPath);
           const created = await bookmarkService.create({ url, title, parentId });
@@ -143,12 +148,12 @@ export const useRowActions = (
           }
         } catch (e) {
           console.error('[useRowActions] 削除のアンドゥに失敗しました:', e);
-          setError('元に戻せませんでした');
+          setError(t('popupErrorUndoFailed'));
         }
       });
       return true;
     },
-    [refresh, register],
+    [refresh, register, t],
   );
 
   const moveRow = useCallback(
@@ -166,18 +171,18 @@ export const useRowActions = (
         await bookmarkService.move(id, targetFolderId);
       } catch (e) {
         console.error('[useRowActions] 移動に失敗しました:', e);
-        setError('移動できませんでした');
+        setError(t('popupErrorMoveFailed'));
         return false;
       }
 
       searchEngine.moveNode(id, targetFolderId, targetFolderPath);
       refresh();
 
-      register(`「${title}」を移動しました`, async () => {
+      register(t('popupUndoMoved', title), async () => {
         try {
           // 元の親が不明（ルート直下等で parentId 無し）なら戻せない。他の失敗パスと同様に通知する。
           if (originalParentId === undefined) {
-            setError('元に戻せませんでした');
+            setError(t('popupErrorUndoFailed'));
             return;
           }
           await bookmarkService.move(id, originalParentId);
@@ -185,12 +190,12 @@ export const useRowActions = (
           refresh();
         } catch (e) {
           console.error('[useRowActions] 移動のアンドゥに失敗しました:', e);
-          setError('元に戻せませんでした');
+          setError(t('popupErrorUndoFailed'));
         }
       });
       return true;
     },
-    [refresh, register],
+    [refresh, register, t],
   );
 
   // 一括移動/削除の中核（対象フィルタ・1件ごとの部分失敗耐性）は `bulkActionsCore`（純粋・DI）に委譲する。
@@ -240,7 +245,7 @@ export const useRowActions = (
         refresh();
       }
       if (anyFailed) {
-        setError('一部の項目を移動できませんでした');
+        setError(t('popupErrorBulkMoveFailed'));
       }
       if (moved.length === 0) {
         return;
@@ -248,15 +253,15 @@ export const useRowActions = (
 
       // 1つの undo で成功した全件を元の親へ戻す（AC-4「一括アンドゥが1回で全戻し」）。
       // `undoMoveRowsCore` は1件ごとに独立して処理するため、途中の失敗が残りの件の巻き戻しを止めない。
-      register(`${moved.length}件を移動しました`, async () => {
+      register(t('popupUndoMovedCount', String(moved.length)), async () => {
         const { anyFailed: undoFailed } = await undoMoveRowsCore(moved, moveDeps);
         refresh();
         if (undoFailed) {
-          setError('一部を元に戻せませんでした');
+          setError(t('popupErrorBulkUndoFailed'));
         }
       });
     },
-    [refresh, register, moveDeps],
+    [refresh, register, moveDeps, t],
   );
 
   const deleteRows = useCallback(
@@ -278,7 +283,7 @@ export const useRowActions = (
         refresh();
       }
       if (anyFailed) {
-        setError('一部の項目を削除できませんでした');
+        setError(t('popupErrorBulkDeleteFailed'));
       }
       if (removed.length === 0) {
         return;
@@ -286,15 +291,15 @@ export const useRowActions = (
 
       // 1つの undo で成功した全件を再作成する（AC-4）。`undoDeleteRowsCore` は1件ごとに独立して処理するため、
       // 途中の失敗が残りの件の再作成を止めない。
-      register(`${removed.length}件を削除しました`, async () => {
+      register(t('popupUndoDeletedCount', String(removed.length)), async () => {
         const { anyFailed: undoFailed } = await undoDeleteRowsCore(removed, deleteDeps);
         refresh();
         if (undoFailed) {
-          setError('一部を元に戻せませんでした');
+          setError(t('popupErrorBulkUndoFailed'));
         }
       });
     },
-    [refresh, register, deleteDeps],
+    [refresh, register, deleteDeps, t],
   );
 
   const clearError = useCallback(() => setError(null), []);

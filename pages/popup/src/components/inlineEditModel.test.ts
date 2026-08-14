@@ -7,11 +7,11 @@ describe('validateUrl', () => {
   });
 
   it('空文字は不正', () => {
-    expect(validateUrl('')).toEqual({ ok: false, message: 'URLを入力してください' });
+    expect(validateUrl('')).toEqual({ ok: false, message: { key: 'popupErrorUrlRequired' } });
   });
 
   it('空白のみは不正', () => {
-    expect(validateUrl('   ')).toEqual({ ok: false, message: 'URLを入力してください' });
+    expect(validateUrl('   ')).toEqual({ ok: false, message: { key: 'popupErrorUrlRequired' } });
   });
 
   it('スキームなしはパース不能として不正', () => {
@@ -21,12 +21,12 @@ describe('validateUrl', () => {
 
   it('javascript: スキームは不正', () => {
     const result = validateUrl('javascript:alert(1)');
-    expect(result).toEqual({ ok: false, message: 'このスキームのURLは登録できません' });
+    expect(result).toEqual({ ok: false, message: { key: 'popupErrorUrlScheme' } });
   });
 
   it('data: スキームは不正', () => {
     const result = validateUrl('data:text/html,<script>alert(1)</script>');
-    expect(result).toEqual({ ok: false, message: 'このスキームのURLは登録できません' });
+    expect(result).toEqual({ ok: false, message: { key: 'popupErrorUrlScheme' } });
   });
 
   it('chrome: スキームは許可する（既存ブックマークが持ち得るため）', () => {
@@ -66,7 +66,7 @@ describe('planCommit', () => {
   it('URLが不正なら他の差分に関わらず invalid', () => {
     expect(planCommit(original, { title: 'ハブ', url: 'not a url' })).toEqual({
       type: 'invalid',
-      message: 'URLの形式が正しくありません',
+      message: { key: 'popupErrorUrlInvalid' },
     });
   });
 

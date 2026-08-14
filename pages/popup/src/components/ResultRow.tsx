@@ -1,6 +1,7 @@
 import { AliasEditor } from './AliasEditor.js';
 import { Favicon } from './Favicon.js';
 import { InlineEdit } from './InlineEdit.js';
+import { useI18n } from '@extension/i18n';
 import { cn } from '@extension/ui';
 import type { CommitPlan, EditDraft } from './inlineEditModel.js';
 import type { SearchResultItem } from '@extension/shared';
@@ -92,6 +93,7 @@ export const ResultRow = ({
   onToggleSelect,
   onRangeSelect,
 }: ResultRowProps) => {
+  const { t } = useI18n();
   const matched = item.matchedAliases;
   const others = item.aliases.filter(a => !matched.includes(a));
   const ordered = [...matched, ...others];
@@ -212,7 +214,7 @@ export const ResultRow = ({
           )}
           <span
             data-checkbox-area="true"
-            title={checked ? '選択解除' : '選択'}
+            title={checked ? t('commonDeselect') : t('commonSelect')}
             className={cn(
               'absolute inset-0 flex items-center justify-center rounded text-[10px] font-bold leading-none text-white transition-opacity',
               checked ? 'bg-accent' : 'border-line-dashed border-[1.5px] bg-white',
@@ -228,13 +230,13 @@ export const ResultRow = ({
         <span className="flex flex-none items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <span
             data-row-action="edit"
-            title="編集（F2）"
+            title={t('popupRowEdit')}
             className="text-ink-faint hover:text-accent flex h-6 w-6 items-center justify-center rounded">
             ✎
           </span>
           <span
             data-row-action="delete"
-            title="削除（Delete）"
+            title={t('popupRowDelete')}
             className="text-ink-faint hover:text-danger flex h-6 w-6 items-center justify-center rounded">
             🗑
           </span>
@@ -247,7 +249,7 @@ export const ResultRow = ({
           <span className="text-ink-soft flex-none truncate text-[11.5px]">{item.folderPath.join(' / ')}</span>
         )}
         {/* 別名チップ領域: この範囲のクリックは別名編集に入る（handleClick が data 属性で判定）。 */}
-        <span data-alias-area="true" title="クリックで別名を編集" className="flex items-center gap-2">
+        <span data-alias-area="true" title={t('popupRowAliasEdit')} className="flex items-center gap-2">
           {shown.map((alias, i) => {
             const isMatched = matched.includes(alias);
             return (
@@ -273,7 +275,7 @@ export const ResultRow = ({
           {/* 別名が無い行でも編集導線を出す（別名を付けて探しやすくする）。 */}
           {ordered.length === 0 && (
             <span className="text-ink-faint border-line-dashed rounded-full border border-dashed px-2 py-[2px] text-[11px]">
-              ＋別名
+              {t('popupRowAddAlias')}
             </span>
           )}
         </span>

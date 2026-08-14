@@ -1,31 +1,400 @@
 {
-  "extensionDescription": {
-    "description": "Extension description",
-    "message": "別名(エイリアス)を付けて探せるブックマーク検索。辞書に頼らず自分だけの呼び名で素早く見つかる。外部通信ゼロで安心。"
-  },
   "extensionName": {
     "description": "Extension name",
     "message": "Findmark"
   },
-  "toggleTheme": {
-    "message": "テーマを切り替え"
+  "extensionDescription": {
+    "description": "Extension description",
+    "message": "別名(エイリアス)を付けて探せるブックマーク検索。辞書に頼らず自分だけの呼び名で素早く見つかる。外部通信ゼロで安心。"
   },
-  "injectButton": {
-    "message": "クリックしてコンテンツスクリプトを挿入"
+  "commandOpenPopup": {
+    "description": "Keyboard shortcut description for opening the popup",
+    "message": "Findmark の検索ポップアップを開く"
   },
-  "greeting": {
-    "description": "挨拶メッセージ",
-    "message": "こんにちは、私の名前は $NAME$ です",
-    "placeholders": {
-      "name": {
-        "content": "$1",
-        "example": "山田 太郎"
-      }
-    }
+  "commonAll": {
+    "message": "すべて"
   },
-  "hello": {
-    "description": "プレースホルダーの例",
-    "message": "こんにちは $1"
+  "commonLoading": {
+    "message": "読み込み中…"
+  },
+  "commonClose": {
+    "message": "閉じる"
+  },
+  "commonSave": {
+    "message": "保存"
+  },
+  "commonCancel": {
+    "message": "キャンセル"
+  },
+  "commonDone": {
+    "message": "完了"
+  },
+  "commonDelete": {
+    "message": "削除"
+  },
+  "commonMove": {
+    "message": "移動"
+  },
+  "commonRestore": {
+    "message": "復元"
+  },
+  "commonSelect": {
+    "message": "選択"
+  },
+  "commonDeselect": {
+    "message": "選択解除"
+  },
+  "commonCopy": {
+    "message": "コピー"
+  },
+  "commonCopied": {
+    "message": "コピーしました"
+  },
+  "commonSaved": {
+    "message": "保存しました"
+  },
+  "commonRootFolder": {
+    "description": "Shown instead of a folder path when the item sits directly under the root",
+    "message": "(直下)"
+  },
+  "popupSearchPlaceholder": {
+    "message": "ブックマークを検索..."
+  },
+  "popupSearchLabel": {
+    "message": "ブックマークを検索"
+  },
+  "popupAddCurrentTitle": {
+    "message": "現在のページを追加（Ctrl/Cmd+D）"
+  },
+  "popupAddCurrentButton": {
+    "message": "追加"
+  },
+  "popupFolderTreeLabel": {
+    "message": "フォルダ"
+  },
+  "popupTreeExpand": {
+    "message": "展開"
+  },
+  "popupTreeCollapse": {
+    "message": "折りたたむ"
+  },
+  "popupTreeMore": {
+    "description": "$1 = number of hidden folders",
+    "message": "さらに $1 件…"
+  },
+  "popupEmptyNoResults": {
+    "message": "一致するブックマークがありません"
+  },
+  "popupMetaScopedQuery": {
+    "description": "$1 = scope path, $2 = query, $3 = result count",
+    "message": "$1 の中から「$2」— $3件"
+  },
+  "popupMetaScopedBrowse": {
+    "description": "$1 = scope path, $2 = result count",
+    "message": "$1 の直下 — $2件"
+  },
+  "popupRowEdit": {
+    "message": "編集（F2）"
+  },
+  "popupRowDelete": {
+    "message": "削除（Delete）"
+  },
+  "popupRowAliasEdit": {
+    "message": "クリックで別名を編集"
+  },
+  "popupRowAddAlias": {
+    "message": "＋別名"
+  },
+  "popupAliasPlaceholder": {
+    "message": "別名を追加…"
+  },
+  "popupAliasInputLabel": {
+    "description": "$1 = bookmark URL",
+    "message": "別名を編集（$1）"
+  },
+  "popupAliasChipEdit": {
+    "message": "クリックで再編集"
+  },
+  "popupAliasChipRemove": {
+    "description": "$1 = alias text",
+    "message": "別名「$1」を削除"
+  },
+  "popupAliasHint": {
+    "message": "Enter で確定 / Backspace で直前のチップを削除"
+  },
+  "popupInlineTitleLabel": {
+    "message": "タイトルを編集"
+  },
+  "popupInlineUrlLabel": {
+    "message": "URLを編集"
+  },
+  "popupMoveDialogLabel": {
+    "message": "フォルダを選択して移動"
+  },
+  "popupFolderFilterPlaceholder": {
+    "message": "フォルダ名で絞り込み…"
+  },
+  "popupFolderNoMatch": {
+    "message": "該当するフォルダがありません"
+  },
+  "popupMoveCurrentLocation": {
+    "message": "現在の場所"
+  },
+  "popupBulkSelected": {
+    "description": "$1 = number of selected rows",
+    "message": "$1件選択中"
+  },
+  "popupAddPanelLabel": {
+    "message": "現在のページを登録"
+  },
+  "popupAddPanelTitle": {
+    "message": "ページを登録"
+  },
+  "popupAddPanelRegistered": {
+    "message": "登録済み"
+  },
+  "popupAddPanelTitleField": {
+    "message": "タイトル"
+  },
+  "popupAddPanelFolderField": {
+    "message": "保存先フォルダ"
+  },
+  "popupAddPanelAliasField": {
+    "message": "別名"
+  },
+  "popupAddPanelUnknownFolder": {
+    "message": "（不明なフォルダ）"
+  },
+  "popupUndoAction": {
+    "message": "元に戻す"
+  },
+  "popupUndoDeleted": {
+    "description": "$1 = bookmark title",
+    "message": "「$1」を削除しました"
+  },
+  "popupUndoMoved": {
+    "description": "$1 = bookmark title",
+    "message": "「$1」を移動しました"
+  },
+  "popupUndoDeletedCount": {
+    "description": "$1 = number of deleted bookmarks",
+    "message": "$1件を削除しました"
+  },
+  "popupUndoMovedCount": {
+    "description": "$1 = number of moved bookmarks",
+    "message": "$1件を移動しました"
+  },
+  "popupErrorEditFailed": {
+    "message": "編集内容を保存できませんでした"
+  },
+  "popupErrorDeleteFailed": {
+    "message": "削除できませんでした"
+  },
+  "popupErrorMoveFailed": {
+    "message": "移動できませんでした"
+  },
+  "popupErrorUndoFailed": {
+    "message": "元に戻せませんでした"
+  },
+  "popupErrorBulkMoveFailed": {
+    "message": "一部の項目を移動できませんでした"
+  },
+  "popupErrorBulkDeleteFailed": {
+    "message": "一部の項目を削除できませんでした"
+  },
+  "popupErrorBulkUndoFailed": {
+    "message": "一部を元に戻せませんでした"
+  },
+  "popupErrorPageNotAddable": {
+    "message": "このページは登録できません"
+  },
+  "popupErrorAddCurrentFailed": {
+    "message": "現在のページを登録できませんでした"
+  },
+  "popupErrorUrlRequired": {
+    "message": "URLを入力してください"
+  },
+  "popupErrorUrlInvalid": {
+    "message": "URLの形式が正しくありません"
+  },
+  "popupErrorUrlScheme": {
+    "message": "このスキームのURLは登録できません"
+  },
+  "optionsTablistLabel": {
+    "message": "オプション"
+  },
+  "optionsTabImportExport": {
+    "message": "インポート / エクスポート"
+  },
+  "optionsTabTrash": {
+    "message": "ゴミ箱"
+  },
+  "optionsTabSettings": {
+    "message": "設定"
+  },
+  "optionsImportExportHeading": {
+    "message": "インポート / エクスポート"
+  },
+  "optionsExportHeading": {
+    "message": "エクスポート"
+  },
+  "optionsExportJson": {
+    "message": "独自JSONをエクスポート"
+  },
+  "optionsExportHtml": {
+    "message": "標準HTMLをエクスポート"
+  },
+  "optionsImportHeading": {
+    "message": "インポート"
+  },
+  "optionsImportDescription": {
+    "message": "独自JSON(.json)または標準HTML(.html)のファイルを選択し、[実行]を押してください。"
+  },
+  "optionsImportChooseFile": {
+    "message": "ファイルを選択"
+  },
+  "optionsImportNoFile": {
+    "message": "ファイルが選択されていません"
+  },
+  "optionsImportRun": {
+    "message": "実行"
+  },
+  "optionsImportRunning": {
+    "message": "実行中…"
+  },
+  "optionsImportReportTotal": {
+    "description": "$1 = total number of imported entries",
+    "message": "インポート結果（合計 $1件）"
+  },
+  "optionsImportReportRow": {
+    "description": "$1 = row label, $2 = count",
+    "message": "$1: $2件"
+  },
+  "optionsImportReportFailed": {
+    "description": "$1 = number of failed entries",
+    "message": "失敗: $1件"
+  },
+  "optionsImportReportCreated": {
+    "message": "新規作成"
+  },
+  "optionsImportReportAliasMerged": {
+    "message": "別名マージ"
+  },
+  "optionsImportReportSkipped": {
+    "message": "スキップ"
+  },
+  "optionsImportReportOverwritten": {
+    "message": "上書き"
+  },
+  "optionsImportReportKeptBoth": {
+    "message": "両方残す"
+  },
+  "optionsImportErrorFormat": {
+    "message": "ファイル形式が不正です(format/version を確認)"
+  },
+  "optionsImportErrorFailed": {
+    "message": "インポートに失敗しました"
+  },
+  "optionsConflictDialogLabel": {
+    "message": "インポートの競合を解決"
+  },
+  "optionsConflictHeading": {
+    "message": "同じURLのブックマークが見つかりました"
+  },
+  "optionsConflictCount": {
+    "description": "$1 = index of the conflict being resolved (1-based)",
+    "message": "競合 $1件目"
+  },
+  "optionsConflictExisting": {
+    "message": "現在の登録"
+  },
+  "optionsConflictIncoming": {
+    "message": "インポートするデータ"
+  },
+  "optionsConflictApplyToAll": {
+    "message": "残りの競合にもこの選択を適用する"
+  },
+  "optionsConflictSkip": {
+    "message": "スキップ"
+  },
+  "optionsConflictKeepBoth": {
+    "message": "両方残す"
+  },
+  "optionsConflictOverwrite": {
+    "message": "上書き"
+  },
+  "optionsTrashHeading": {
+    "message": "ゴミ箱"
+  },
+  "optionsTrashEmptyAll": {
+    "message": "ゴミ箱を空にする"
+  },
+  "optionsTrashDescription": {
+    "message": "削除したブックマークは一定期間ここに保持されます（設定タブで保持日数を変更できます）。復元すると元のフォルダへ戻ります（フォルダが無い場合は再作成されます）。"
+  },
+  "optionsTrashEmpty": {
+    "message": "ゴミ箱は空です"
+  },
+  "optionsTrashItemCount": {
+    "description": "$1 = number of bookmarks inside a deleted folder",
+    "message": "($1件)"
+  },
+  "optionsTrashDeletedAt": {
+    "description": "$1 = folder path, $2 = deletion date and time",
+    "message": "$1 ・ 削除日時 $2"
+  },
+  "optionsTrashAliases": {
+    "description": "$1 = comma separated aliases",
+    "message": "別名: $1"
+  },
+  "optionsTrashErrorLoad": {
+    "message": "ゴミ箱を読み込めませんでした"
+  },
+  "optionsTrashErrorRestore": {
+    "message": "復元できませんでした（元のフォルダを確認してください）"
+  },
+  "optionsTrashErrorDelete": {
+    "message": "削除できませんでした"
+  },
+  "optionsTrashErrorClear": {
+    "message": "ゴミ箱を空にできませんでした"
+  },
+  "optionsSettingsHeading": {
+    "message": "設定"
+  },
+  "optionsShortcutUnassignedHeading": {
+    "message": "起動ショートカットが未割り当てです"
+  },
+  "optionsShortcutUnassignedDescription": {
+    "message": "他の拡張機能が同じキーを使用しているため、Findmark の起動ショートカット（Ctrl+Shift+F / Command+Shift+F）が割り当てられていません。下のURLをアドレスバーに貼り付けて開き、Findmark にショートカットを設定してください（拡張機能からこのページを直接開くことはできません）。"
+  },
+  "optionsShortcutUrlLabel": {
+    "message": "ショートカット設定ページのURL"
+  },
+  "optionsShortcutCopyError": {
+    "message": "URLをコピーできませんでした。上のテキストを選択してコピーしてください"
+  },
+  "optionsRetentionHeading": {
+    "message": "ゴミ箱の保持日数"
+  },
+  "optionsRetentionDescription": {
+    "message": "削除したブックマークをゴミ箱に保持する日数です。超えると自動的に削除されます。"
+  },
+  "optionsRetentionDays": {
+    "description": "$1 = number of days",
+    "message": "$1日"
+  },
+  "optionsRetentionError": {
+    "message": "保持日数を保存できませんでした"
+  },
+  "optionsLocaleHeading": {
+    "message": "表示言語"
+  },
+  "optionsLocaleDescription": {
+    "message": "ポップアップとこの設定画面の表示言語です。未設定の場合はブラウザの言語に従います。"
+  },
+  "optionsLocaleError": {
+    "message": "ロケールを保存できませんでした"
   },
   "displayErrorInfo": {
     "message": "エラーが発生しました"

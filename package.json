@@ -1,13 +1,13 @@
 {
-  "name": "chrome-extension-boilerplate-react-vite",
-  "version": "0.5.0",
-  "description": "chrome extension boilerplate",
+  "name": "findmark",
+  "version": "1.0.0",
+  "description": "別名(エイリアス)を付けて探せるブックマーク検索 Chrome 拡張",
   "license": "MIT",
   "private": true,
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite.git"
+    "url": "https://github.com/RyumaKazue/Findmark.git"
   },
   "type": "module",
   "scripts": {

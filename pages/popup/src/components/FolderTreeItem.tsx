@@ -1,4 +1,5 @@
 import { TRUNCATE_DEPTH } from './folderTreeModel.js';
+import { useI18n } from '@extension/i18n';
 import { cn } from '@extension/ui';
 import type { TreeRow } from './folderTreeModel.js';
 import type { MouseEvent } from 'react';
@@ -63,6 +64,7 @@ export const FolderTreeItem = ({
   onRevealMore,
   registerRef,
 }: FolderTreeItemProps) => {
+  const { t } = useI18n();
   // 相互アクセント（AC-14）: アクティブ時のスコープは accent 塗り + 白（強）、
   // 非アクティブ時は accent 淡背景 + accent 文字（弱）。フォーカスがどのペインにあるかを色で示す。
   const scopedStrong = scoped && paneFocused;
@@ -83,7 +85,7 @@ export const FolderTreeItem = ({
             !scoped && 'text-ink hover:bg-accent-bg',
           )}>
           <span aria-hidden="true">📁</span>
-          <span>すべて</span>
+          <span>{t('commonAll')}</span>
         </button>
       </div>
     );
@@ -102,7 +104,7 @@ export const FolderTreeItem = ({
             'text-ink-faint flex h-[26px] flex-1 cursor-pointer items-center rounded-md px-2 text-left text-[11px]',
             focused ? 'bg-pane-3' : 'hover:bg-pane-3',
           )}>
-          さらに {row.hiddenCount} 件…
+          {t('popupTreeMore', String(row.hiddenCount))}
         </button>
       </div>
     );
@@ -119,7 +121,7 @@ export const FolderTreeItem = ({
       {hasChildren ? (
         <button
           type="button"
-          aria-label={expanded ? '折りたたむ' : '展開'}
+          aria-label={expanded ? t('popupTreeCollapse') : t('popupTreeExpand')}
           aria-expanded={expanded}
           onMouseDown={preventFocusSteal}
           onClick={onToggleExpand}

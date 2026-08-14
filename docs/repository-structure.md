@@ -14,22 +14,22 @@
 ```
 Findmark/
 ├── chrome-extension/          # 拡張機能のコア(manifest, Service Worker)
-│   ├── manifest.ts            # Manifest V3 定義(権限/エントリ)
+│   ├── manifest.ts            # Manifest V3 定義(権限/エントリ/アイコン)
 │   ├── src/background/        # Service Worker(起動時掃除, commands受信)
-│   ├── public/                # アイコン等の静的アセット
+│   ├── icons/                 # アイコンの生成元SVG(dist へは含めない)
+│   ├── public/                # dist へそのままコピーされる静的アセット(icon-*.png)
 │   └── vite.config.mts
 │
 ├── pages/                     # 各UIコンテキスト(React)
 │   ├── popup/                 # ★検索ポップアップ(メインUI)
-│   ├── options/               # ★オプション(インポート/エクスポート, ゴミ箱, 設定)
-│   ├── content-runtime/       # (ボイラープレート由来。MVPでは未使用想定)
-│   ├── devtools/              # (同上)
-│   └── devtools-panel/        # (同上)
+│   └── options/               # ★オプション(インポート/エクスポート, ゴミ箱, 設定)
+│                              # ※ボイラープレート由来の content-runtime/devtools/devtools-panel は
+│                              #   manifest が宣言せず提出zipを膨らませるため U18 で削除した
 │
 ├── packages/                  # 共有パッケージ(ワークスペース)
 │   ├── shared/                # ★サービスレイヤー(検索/正規化/import-export/undo)
 │   ├── storage/               # ★データレイヤー(alias/trash/bookmark/settings)
-│   ├── i18n/                  # _locales(ja/en)の型付き参照
+│   ├── i18n/                  # ★文言レイヤー(_locales(ja/en)のカタログ + ランタイム翻訳)
 │   ├── ui/                    # 共有UIコンポーネント
 │   ├── env/                   # 環境変数
 │   ├── hmr/ dev-utils/ vite-config/ tsconfig/ tailwindcss-config/  # ビルド基盤
@@ -37,8 +37,9 @@ Findmark/
 │   └── zipper/                # ストア提出用zip生成
 │
 ├── tests/                     # E2E等の横断テスト(boilerplate同梱基盤)
-├── docs/                      # 永続ドキュメント(本書を含む6点 + ideas/)
-├── bash-scripts/              # env/version補助スクリプト
+├── docs/                      # 永続ドキュメント(本書を含む6点 + ideas/ + store/)
+│   └── store/                 # Chrome Web Store 提出物(掲載情報/ポリシー/撮影手順/チェックリスト)
+├── bash-scripts/              # env/version補助スクリプト + アイコン生成(generate_icons.mjs)
 ├── dist/                      # ビルド成果物(gitignore)
 ├── package.json               # ルート(scripts, 依存)
 ├── pnpm-workspace.yaml        # ワークスペース定義
@@ -56,7 +57,7 @@ Findmark/
 **役割**: Manifest定義と背景処理。UIを持たない。
 
 **配置ファイル**:
-- `manifest.ts`(想定・**現状はボイラープレート初期状態**): 目標は 権限(`bookmarks`/`storage`/`activeTab`/`favicon`)、`action.default_popup`、`options_page`、`commands`(キーボードショートカット)、`_favicon` の web_accessible_resources を定義。現状は `permissions: ['storage']` のみで、不要な `content_scripts`(`<all_urls>`)・`devtools_page` が残存する。整理タスクは architecture.md「セキュリティ制約」の現状ギャップを参照。
+- `manifest.ts`(**U1 で是正済み・U18 で提出用に整備**): 権限は `bookmarks`/`storage`/`activeTab`/`favicon` の4つのみ、`action.default_popup`、`options_page`、`commands`(起動ショートカット)、`icons`(16/32/48/128)を定義する。`content_scripts`(`<all_urls>`)・`devtools_page`・Firefox 向け `browser_specific_settings` は持たない(MVP は Chrome 専用)。拡張名・説明・コマンド説明は `__MSG_*` で `_locales` から解決する。
 - `utils/plugins/make-manifest-plugin.ts`: `manifest.ts` をビルド時に `manifest.js` へ変換する Vite プラグイン。
 - `src/background/index.ts`: Service Worker。起動時のクリーンアップ(存在しないフォルダID・別名参照の掃除)、`chrome.commands` 受信。
 
@@ -187,12 +188,34 @@ packages/storage/lib/
 - 依存可能: Chrome API(`chrome.storage`, `chrome.bookmarks`, `chrome.tabs`)
 - 依存禁止: `packages/shared`, `pages/*`(ビジネスロジックを持たない)
 
+### packages/i18n/ (文言レイヤー)
+
+**役割**: UI 文言カタログの単一の置き場。**manifest 用の `_locales` と、Popup/Options の表示文言の双方を同じカタログから供給する**。
+
+```
+packages/i18n/
+├── locales/{ja,en}/messages.json  # 文言カタログ(ビルドで dist/_locales へコピーされる)
+├── lib/
+│   ├── runtime.ts                 # resolveUiLocale / createTranslator(React非依存・U18)
+│   ├── react.ts                   # I18nProvider / useI18n(U18)
+│   ├── runtime.test.ts            # ロケール解決・フォールバック・カタログ整合(ja/enのキー一致)
+│   └── i18n.ts / i18n-dev.ts / i18n-prod.ts  # chrome.i18n ベースの `t`(ボイラープレート由来)
+└── vitest.config.ts
+```
+
+> **2系統の文言解決(U18)**: manifest の `name`/`description`/コマンド説明は `__MSG_*` で Chrome が `_locales` から解決する(ブラウザUI言語に従う)。一方 Popup/Options の UI 文言は `UserSettings.locale` に追従させる必要があるため、バンドル済みカタログを `createTranslator` で引く。`chrome.i18n.getMessage` はブラウザUI言語しか参照できず、アプリ内の言語切替を実現できないため。
+
+**依存関係**:
+- 依存可能: React(Provider のみ)
+- 依存禁止: `pages/*`, `packages/storage`(ロケール値は呼び出し側が渡す)
+
 ### docs/ (ドキュメント)
 
 **配置ドキュメント**:
 - `product-requirements.md` / `functional-design.md` / `architecture.md` / `repository-structure.md`(本書) / `development-guidelines.md` / `glossary.md`
 - `ideas/initial-requirements.md`: 初期要件(壁打ち成果物)
 - `ideas/keyboard-first-navigation.md`: キーボード完結ナビゲーションの仕様変更(壁打ち成果物・永続ドキュメントへの反映待ち)
+- `store/`: Chrome Web Store 提出物(U18)。`README.md`(提出チェックリスト・権限警告/外部通信ゼロの確認結果) / `listing-{ja,en}.md` / `privacy-policy-{ja,en}.md` / `screenshots.md`
 
 ---
 
