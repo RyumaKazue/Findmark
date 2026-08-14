@@ -122,6 +122,8 @@ describe('deleteRowsCore', () => {
       create: vi.fn(),
       upsertAlias: vi.fn(),
       addNode: vi.fn(),
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash: vi.fn().mockResolvedValue(undefined),
     });
 
     expect(result.removed.map(r => r.id)).toEqual(['1', '2']);
@@ -147,6 +149,8 @@ describe('deleteRowsCore', () => {
       create: vi.fn(),
       upsertAlias: vi.fn(),
       addNode: vi.fn(),
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash: vi.fn().mockResolvedValue(undefined),
     });
 
     expect(result.removed.map(r => r.id)).toEqual(['1']);
@@ -169,10 +173,81 @@ describe('deleteRowsCore', () => {
       create: vi.fn(),
       upsertAlias: vi.fn(),
       addNode: vi.fn(),
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash: vi.fn().mockResolvedValue(undefined),
     });
 
     expect(result.removed.map(r => r.id)).toEqual(['1']);
     expect(result.anyFailed).toBe(false);
+  });
+
+  it('削除成功件をpushTrashしtrashIdをremovedへ載せる', async () => {
+    const pushTrash = vi.fn().mockResolvedValue('trash-99');
+    const targets: BulkDeleteTarget[] = [
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: ['Dev'], aliases: ['あ'] },
+    ];
+
+    const result = await deleteRowsCore(targets, {
+      remove: vi.fn().mockResolvedValue(undefined),
+      removeAlias: vi.fn().mockResolvedValue(undefined),
+      removeNode: vi.fn(),
+      ensureFolderPath: vi.fn(),
+      create: vi.fn(),
+      upsertAlias: vi.fn(),
+      addNode: vi.fn(),
+      pushTrash,
+      removeTrash: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(pushTrash).toHaveBeenCalledWith(targets[0]);
+    expect(result.removed[0]?.trashId).toBe('trash-99');
+    expect(result.anyFailed).toBe(false);
+  });
+
+  it('pushTrashの失敗はブックマーク削除の成否に影響しない（続行しtrashId=null）', async () => {
+    const pushTrash = vi.fn().mockRejectedValue(new Error('trash fail'));
+    const targets: BulkDeleteTarget[] = [
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: [], aliases: [] },
+    ];
+
+    const result = await deleteRowsCore(targets, {
+      remove: vi.fn().mockResolvedValue(undefined),
+      removeAlias: vi.fn().mockResolvedValue(undefined),
+      removeNode: vi.fn(),
+      ensureFolderPath: vi.fn(),
+      create: vi.fn(),
+      upsertAlias: vi.fn(),
+      addNode: vi.fn(),
+      pushTrash,
+      removeTrash: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(result.removed.map(r => r.id)).toEqual(['1']);
+    expect(result.removed[0]?.trashId).toBeNull();
+    expect(result.anyFailed).toBe(false);
+  });
+
+  it('pushTrashの失敗をconsole.errorに残す（第2層防御の無効化を見逃さない）', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const pushTrash = vi.fn().mockRejectedValue(new Error('trash fail'));
+    const targets: BulkDeleteTarget[] = [
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: [], aliases: [] },
+    ];
+
+    await deleteRowsCore(targets, {
+      remove: vi.fn().mockResolvedValue(undefined),
+      removeAlias: vi.fn().mockResolvedValue(undefined),
+      removeNode: vi.fn(),
+      ensureFolderPath: vi.fn(),
+      create: vi.fn(),
+      upsertAlias: vi.fn(),
+      addNode: vi.fn(),
+      pushTrash,
+      removeTrash: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith('[bulkActionsCore] ゴミ箱への退避に失敗しました:', expect.any(Error));
+    errorSpy.mockRestore();
   });
 });
 
@@ -182,8 +257,9 @@ describe('undoDeleteRowsCore', () => {
     const create = vi.fn().mockResolvedValue(dummyNode('new-1'));
     const upsertAlias = vi.fn().mockResolvedValue(undefined);
     const addNode = vi.fn();
+    const removeTrash = vi.fn().mockResolvedValue(undefined);
     const removed: RemovedRecord[] = [
-      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: ['A'], aliases: ['あ'] },
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: ['A'], aliases: ['あ'], trashId: 'trash-1' },
     ];
     const deps: DeleteDeps = {
       remove: vi.fn(),
@@ -193,6 +269,8 @@ describe('undoDeleteRowsCore', () => {
       create,
       upsertAlias,
       addNode,
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash,
     };
 
     const result = await undoDeleteRowsCore(removed, deps);
@@ -200,7 +278,59 @@ describe('undoDeleteRowsCore', () => {
     expect(create).toHaveBeenCalledWith({ url: 'https://a.example.com', title: 'A', parentId: 'parent-1' });
     expect(upsertAlias).toHaveBeenCalledWith('https://a.example.com', ['あ']);
     expect(addNode).toHaveBeenCalled();
+    expect(removeTrash).toHaveBeenCalledWith('trash-1');
     expect(result.anyFailed).toBe(false);
+  });
+
+  it('trashIdがnullの件はremoveTrashを呼ばない', async () => {
+    const ensureFolderPath = vi.fn().mockResolvedValue('parent-1');
+    const create = vi.fn().mockResolvedValue(dummyNode('new-1'));
+    const removeTrash = vi.fn().mockResolvedValue(undefined);
+    const removed: RemovedRecord[] = [
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: [], aliases: [], trashId: null },
+    ];
+    const deps: DeleteDeps = {
+      remove: vi.fn(),
+      removeAlias: vi.fn(),
+      removeNode: vi.fn(),
+      ensureFolderPath,
+      create,
+      upsertAlias: vi.fn().mockResolvedValue(undefined),
+      addNode: vi.fn(),
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash,
+    };
+
+    await undoDeleteRowsCore(removed, deps);
+
+    expect(removeTrash).not.toHaveBeenCalled();
+  });
+
+  it('removeTrashの失敗をconsole.errorに残す（再作成自体は成功扱いのまま）', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ensureFolderPath = vi.fn().mockResolvedValue('parent-1');
+    const create = vi.fn().mockResolvedValue(dummyNode('new-1'));
+    const removeTrash = vi.fn().mockRejectedValue(new Error('remove trash fail'));
+    const removed: RemovedRecord[] = [
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: [], aliases: [], trashId: 'trash-1' },
+    ];
+    const deps: DeleteDeps = {
+      remove: vi.fn(),
+      removeAlias: vi.fn(),
+      removeNode: vi.fn(),
+      ensureFolderPath,
+      create,
+      upsertAlias: vi.fn().mockResolvedValue(undefined),
+      addNode: vi.fn(),
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash,
+    };
+
+    const result = await undoDeleteRowsCore(removed, deps);
+
+    expect(errorSpy).toHaveBeenCalledWith('[bulkActionsCore] ゴミ箱項目の取り消しに失敗しました:', expect.any(Error));
+    expect(result.anyFailed).toBe(false); // 再作成自体は成功しているため anyFailed にはしない
+    errorSpy.mockRestore();
   });
 
   it('部分失敗時も残りの件を継続して再作成する（1件の失敗が全体を止めない）', async () => {
@@ -212,9 +342,9 @@ describe('undoDeleteRowsCore', () => {
       );
     const addNode = vi.fn();
     const removed: RemovedRecord[] = [
-      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: [], aliases: [] },
-      { id: '2', title: 'B', url: 'https://b.example.com', folderPath: [], aliases: [] },
-      { id: '3', title: 'C', url: 'https://c.example.com', folderPath: [], aliases: [] },
+      { id: '1', title: 'A', url: 'https://a.example.com', folderPath: [], aliases: [], trashId: null },
+      { id: '2', title: 'B', url: 'https://b.example.com', folderPath: [], aliases: [], trashId: null },
+      { id: '3', title: 'C', url: 'https://c.example.com', folderPath: [], aliases: [], trashId: null },
     ];
     const deps: DeleteDeps = {
       remove: vi.fn(),
@@ -224,6 +354,8 @@ describe('undoDeleteRowsCore', () => {
       create,
       upsertAlias: vi.fn().mockResolvedValue(undefined),
       addNode,
+      pushTrash: vi.fn().mockResolvedValue(null),
+      removeTrash: vi.fn().mockResolvedValue(undefined),
     };
 
     const result = await undoDeleteRowsCore(removed, deps);

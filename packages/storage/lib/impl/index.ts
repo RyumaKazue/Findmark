@@ -3,3 +3,4 @@ export * from './bookmarkService.js';
 export * from './settingsStore.js';
 export * from './localStateStore.js';
 export * from './aliasStore.js';
+export * from './trashStore.js';

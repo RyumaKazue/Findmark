@@ -103,6 +103,52 @@ export interface PopupSession {
   query: string;
 }
 
+/* ------------------------------------------------------------------ *
+ * ゴミ箱（U16・機能12「ゴミ箱(削除データの保持・復元)」）
+ * ------------------------------------------------------------------ */
+
+/**
+ * ゴミ箱の1項目（`chrome.storage.local`、キー `trash`、`TrashItem[]` として保存）。
+ *
+ * 即時アンドゥ（5秒・メモリ、U10 `UndoManager`）とは別の第2層防御。削除時点の
+ * URL・タイトル・元フォルダパス・別名を退避し、保持日数（既定30日・設定可）以内なら
+ * オプションページの「ゴミ箱」タブから復元できる（functional-design.md UC-5）。
+ */
+export interface TrashItem {
+  /** ゴミ箱内の一意ID（Chrome のブックマーク ID とは無関係。`TrashStore.push` が再採番する）。 */
+  id: string;
+  /** `bookmark` は単一ブックマーク、`folder` は配下ツリーごと保持する。 */
+  kind: 'bookmark' | 'folder';
+  /** `kind: 'bookmark'` のときの URL。folder のときは未定義。 */
+  url?: string;
+  /** タイトル（フォルダの場合はフォルダ名）。 */
+  title: string;
+  /** 削除時点の元階層（復元先。`BookmarkService.getFolderPath`/`ensureFolderPath` と同じ意味論）。 */
+  folderPath: string[];
+  /** 削除時点の別名（`kind: 'folder'` の場合は空配列）。 */
+  aliases: string[];
+  /** `kind: 'folder'` のとき、配下ノードを丸ごと保持する（ブックマーク/フォルダの入れ子）。 */
+  children?: TrashItem[];
+  /** 削除日時（epoch ms）。`purgeExpired`/`enforceLimits` の判定に使う。 */
+  deletedAt: number;
+}
+
+/**
+ * `TrashStore.push` の入力型。`TrashItem` から `id`（再採番）・`deletedAt`（削除日時）を除いたもの。
+ *
+ * 両フィールドともゴミ箱への格納責任（データレイヤー）に属し、呼び出し側（UI）に採番させると
+ * 衝突・詐称の余地が生まれるため、型でも渡せないようにする（`push` 内部で `crypto.randomUUID()` /
+ * `Date.now()` により子孫も含め再帰的に採番する）。
+ */
+export interface TrashInput {
+  kind: 'bookmark' | 'folder';
+  url?: string;
+  title: string;
+  folderPath: string[];
+  aliases: string[];
+  children?: TrashInput[];
+}
+
 /** 端末固有の状態（`chrome.storage.local`、キー `local_state`、sync 不可）。 */
 export interface LocalState {
   /** フォルダツリーの展開状態（フォルダ ID の配列）。 */
