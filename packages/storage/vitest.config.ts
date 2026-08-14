@@ -23,6 +23,12 @@ export default defineConfig({
           functions: 80,
           lines: 80,
         },
+        'lib/impl/trashStore.ts': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
+        },
       },
     },
   },

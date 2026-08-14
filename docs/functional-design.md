@@ -327,13 +327,27 @@ class BookmarkService {
 
 **責務**: 削除データの保存・一覧・復元・自動退避。
 
+> **実装状況(U16, 2026-08-14)**: 下記シグネチャは実装(`packages/storage/lib/impl/trashStore.ts`)に合わせて更新済み。`push` の入力は `id`/`deletedAt` を除いた `TrashInput` を受け取り、ストア側が採番する(再採番・詐称防止をデータレイヤーの責務にするため)。復元(`restore`)は元パスが無ければ `ensureFolderPath` で自動再作成し、成功時のみゴミ箱から除去する(失敗時は項目を残しデータ損失ゼロを優先)。`remove`/`clear` を追加し、`purgeExpired`/`enforceLimits` は削除件数を返す(呼び出し側が結果を把握できるようにするため)。`BookmarkService`/`AliasStore` は構造的インターフェース(`TrashBookmarkGateway`/`TrashAliasGateway`)で DI する(`storage → shared` の循環依存を避けるため。`AliasStore` の `AliasNormalizer` と同じ制約)。
+
 ```typescript
+interface TrashInput {           // push の入力(id/deletedAt を除いた TrashItem)
+  kind: 'bookmark' | 'folder';
+  url?: string;
+  title: string;
+  folderPath: string[];
+  aliases: string[];
+  children?: TrashInput[];
+}
+
 class TrashStore {
-  push(item: TrashItem): Promise<void>;      // フォルダは配下ツリーごと
-  list(): Promise<TrashItem[]>;
-  restore(id: string): Promise<void>;        // ensureFolderPath で復元先を再作成
-  purgeExpired(retentionDays: number): Promise<void>;
-  enforceLimits(maxItems: number): Promise<void>;
+  constructor(bookmarks: TrashBookmarkGateway, aliases: TrashAliasGateway);
+  push(input: TrashInput): Promise<string>;   // id(再採番)・deletedAtを付与して保存。フォルダは配下ツリーごと。戻り値はゴミ箱内ID
+  list(): Promise<TrashItem[]>;               // deletedAt 降順
+  restore(id: string): Promise<void>;         // ensureFolderPath で復元先を再作成。成功時のみゴミ箱から除去
+  remove(id: string): Promise<void>;          // 復元せず完全削除(即時アンドゥでの取り消しにも使う)
+  clear(): Promise<void>;
+  purgeExpired(retentionDays: number): Promise<number>;   // 削除件数を返す
+  enforceLimits(maxItems?: number, maxBytes?: number): Promise<number>;  // 削除件数を返す
 }
 ```
 
@@ -577,7 +591,7 @@ sequenceDiagram
 - 復元は URL をキーに別名を戻すため、ブックマークIDが変わっても別名が正しく再紐付けされる。
 - フォルダ削除時は配下のブックマーク・別名を含めツリーごと1つの TrashItem に保存する。
 
-> **実装状況(U10, 2026-07-28)**: 第1層「即時アンドゥ(5秒)」を実装済み。`getFolderPath`/`getByUrl` の chrome API 往復は行わず、`SearchEngine` の検索索引が保持する `folderPath`/`aliases` から退避データを組み立てる(索引は既に `folderPath` を保持しているため)。第2層「ゴミ箱(30日)」への `TrashStore.push` は U16(trash)の対象で、本シーケンス図の `remove(id)` 直前に1行差し込む形で接続する。
+> **実装状況(U10, 2026-07-28 / U16, 2026-08-14)**: 第1層「即時アンドゥ(5秒)」を実装済み。`getFolderPath`/`getByUrl` の chrome API 往復は行わず、`SearchEngine` の検索索引が保持する `folderPath`/`aliases` から退避データを組み立てる(索引は既に `folderPath` を保持しているため)。第2層「ゴミ箱(30日)」も U16 で接続済み。`bookmarkService.remove` → `aliasStore.remove` の直後に `trashStore.push(...)` を呼び、即時アンドゥで復元した場合は `trashStore.remove(trashId)` で退避項目を取り消す(復元済みの重複防止)。復元(Options「ゴミ箱」タブ)は Popup とは別ページのため `SearchEngine` を呼ばず、`AliasStore` の更新のみ行う。Popup は起動のたびに `loadIndex` で実データから索引を作り直すため、復元後の内容は次回起動時に自然に反映される。
 
 ---
 

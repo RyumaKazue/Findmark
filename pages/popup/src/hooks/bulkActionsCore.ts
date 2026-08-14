@@ -91,7 +91,13 @@ const undoMoveRowsCore = async (moved: readonly MovedRecord[], deps: MoveDeps): 
 
 // ── 一括削除 ──
 
-/** `deleteRowsCore`/`undoDeleteRowsCore` が必要とする最小契約。 */
+/**
+ * `deleteRowsCore`/`undoDeleteRowsCore` が必要とする最小契約。
+ *
+ * `pushTrash`/`removeTrash`（U16）は**必須**にしている。任意（`?`）にすると呼び出し側が
+ * 渡し忘れてもコンパイルが通り、第2層防御（30日ゴミ箱）が気づかないまま無効化されるため、
+ * 型でその漏れを検出させる。
+ */
 interface DeleteDeps {
   remove(id: string): Promise<void>;
   removeAlias(url: string): Promise<void>;
@@ -100,6 +106,10 @@ interface DeleteDeps {
   create(data: { url: string; title: string; parentId: string }): Promise<BookmarkNode>;
   upsertAlias(url: string, aliases: string[]): Promise<void>;
   addNode(node: BookmarkNode, folderPath: string[], aliases: string[]): void;
+  /** 削除データをゴミ箱へ退避する（第2層防御）。失敗しても削除自体は成功扱いで続行する。 */
+  pushTrash(target: BulkDeleteTarget): Promise<string | null>;
+  /** アンドゥで元に戻した際、対応するゴミ箱項目を取り消す（復元済みの重複防止）。 */
+  removeTrash(trashId: string): Promise<void>;
 }
 
 /** 削除対象1件（`SearchResultItem` から呼び出し側が変換して渡す。`url` は非空を保証済み）。 */
@@ -118,6 +128,8 @@ interface RemovedRecord {
   url: string;
   folderPath: string[];
   aliases: string[];
+  /** ゴミ箱内 ID（`pushTrash` が成功した場合のみ設定。undo 成功時に `removeTrash` へ渡す）。 */
+  trashId: string | null;
 }
 
 interface BulkDeleteResult {
@@ -126,9 +138,9 @@ interface BulkDeleteResult {
 }
 
 /**
- * 一括削除する。1件ごとに独立して実行し、失敗した件はスキップして続行する。別名の除去に失敗しても
- * ブックマーク自体は削除済みのため続行する（単一版 `deleteRow` と同じ方針。別名の残留は undo の
- * upsert で上書きされ整合する）。成功した件のみ `removed` に積む。
+ * 一括削除する。1件ごとに独立して実行し、失敗した件はスキップして続行する。別名の除去・ゴミ箱への
+ * 退避に失敗してもブックマーク自体は削除済みのため続行する（単一版 `deleteRow` と同じ方針。別名の
+ * 残留は undo の upsert で上書きされ整合する）。成功した件のみ `removed` に積む。
  */
 const deleteRowsCore = async (targets: readonly BulkDeleteTarget[], deps: DeleteDeps): Promise<BulkDeleteResult> => {
   const removed: RemovedRecord[] = [];
@@ -145,8 +157,17 @@ const deleteRowsCore = async (targets: readonly BulkDeleteTarget[], deps: Delete
     } catch {
       // ブックマークは既に削除済みのため索引更新・復元用データの記録は続行する。
     }
+    let trashId: string | null = null;
+    try {
+      trashId = await deps.pushTrash(t);
+    } catch (e) {
+      // ゴミ箱（第2層防御）への退避が失敗しても、削除操作自体は成功扱いで続行する
+      // （UI と実データの乖離を作らない。development-guidelines「エラーハンドリング」）。
+      // ただし第2層防御が無効化された事実は失わないよう console.error に残す。
+      console.error('[bulkActionsCore] ゴミ箱への退避に失敗しました:', e);
+    }
     deps.removeNode(t.id);
-    removed.push({ id: t.id, title: t.title, url: t.url, folderPath: t.folderPath, aliases: t.aliases });
+    removed.push({ id: t.id, title: t.title, url: t.url, folderPath: t.folderPath, aliases: t.aliases, trashId });
   }
   return { removed, anyFailed };
 };
@@ -154,6 +175,7 @@ const deleteRowsCore = async (targets: readonly BulkDeleteTarget[], deps: Delete
 /**
  * 一括削除の undo（成功した全件を再作成する）。1件ごとに独立して try/catch し、途中の失敗で
  * 残りの件の再作成が試みられない・成功済みの件が反映されないまま終わることを防ぐ。
+ * 再作成に成功した件で `trashId` があれば、対応するゴミ箱項目を取り消す（復元済みの重複防止）。
  */
 const undoDeleteRowsCore = async (
   removed: readonly RemovedRecord[],
@@ -168,6 +190,14 @@ const undoDeleteRowsCore = async (
         await deps.upsertAlias(r.url, r.aliases);
       }
       deps.addNode(created, r.folderPath, r.aliases);
+      if (r.trashId !== null) {
+        await deps.removeTrash(r.trashId).catch(e => {
+          // ゴミ箱側の取り消しに失敗しても、再作成自体は成功済みのため anyFailed にはしない
+          // （復元済みの項目がゴミ箱にも残るだけで実害は小さい。ログは useRowActions.deleteRow と揃え、
+          //  console.error のみ残す）。
+          console.error('[bulkActionsCore] ゴミ箱項目の取り消しに失敗しました:', e);
+        });
+      }
     } catch {
       anyFailed = true;
     }

@@ -1,5 +1,5 @@
 import { deleteRowsCore, moveRowsCore, undoDeleteRowsCore, undoMoveRowsCore } from './bulkActionsCore.js';
-import { aliasStore, bookmarkService, searchEngine } from '@src/services';
+import { aliasStore, bookmarkService, searchEngine, trashStore } from '@src/services';
 import { useCallback, useMemo, useState } from 'react';
 import type { BulkDeleteTarget, BulkMoveTarget, DeleteDeps, MoveDeps } from './bulkActionsCore.js';
 import type { SearchResultItem } from '@extension/shared';
@@ -93,7 +93,6 @@ export const useRowActions = (
         return true;
       }
       // 復元に必要な情報を削除前に索引から退避する（UC-5「元パス取得・別名退避」）。
-      // ※U16（ゴミ箱）はこの直後に TrashStore.push(...) を差し込むだけで2層防御になる。
       const folderPath = item.folderPath;
       const aliases = item.aliases;
 
@@ -113,6 +112,16 @@ export const useRowActions = (
         console.error('[useRowActions] 削除に伴う別名の除去に失敗しました:', e);
       }
 
+      // 第2層防御（30日ゴミ箱・U16）へ退避する。失敗しても削除操作自体は成功扱いで続行する
+      // （UI と実データの乖離を作らない）。即時アンドゥ（第1層）で戻した場合は下記 register 内で
+      // このゴミ箱項目を取り消す（復元済みの重複を防ぐ）。
+      let trashId: string | null = null;
+      try {
+        trashId = await trashStore.push({ kind: 'bookmark', url, title, folderPath, aliases });
+      } catch (e) {
+        console.error('[useRowActions] ゴミ箱への退避に失敗しました:', e);
+      }
+
       searchEngine.removeNode(id);
       refresh();
 
@@ -125,6 +134,13 @@ export const useRowActions = (
           }
           searchEngine.addNode(created, folderPath, aliases);
           refresh();
+          if (trashId !== null) {
+            await trashStore.remove(trashId).catch(e => {
+              // ゴミ箱側の取り消しに失敗しても、再作成自体は成功済みのため通知しない
+              // （復元済みの項目がゴミ箱にも残るだけで実害は小さい）。
+              console.error('[useRowActions] ゴミ箱項目の取り消しに失敗しました:', e);
+            });
+          }
         } catch (e) {
           console.error('[useRowActions] 削除のアンドゥに失敗しました:', e);
           setError('元に戻せませんでした');
@@ -197,6 +213,15 @@ export const useRowActions = (
       create: data => bookmarkService.create(data),
       upsertAlias: (url, aliases) => aliasStore.upsert(url, aliases),
       addNode: (node, folderPath, aliases) => searchEngine.addNode(node, folderPath, aliases),
+      pushTrash: target =>
+        trashStore.push({
+          kind: 'bookmark',
+          url: target.url,
+          title: target.title,
+          folderPath: target.folderPath,
+          aliases: target.aliases,
+        }),
+      removeTrash: trashId => trashStore.remove(trashId),
     }),
     [],
   );

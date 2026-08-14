@@ -258,7 +258,7 @@ graph TD
 | U13 | multi-select-bulk | 8 | ✅ 完了 (2026-08-08) | `.steering/20260808-multi-select-bulk/` |
 | U14 | add-current-page | 9 | ✅ 完了 (2026-08-08) | `.steering/20260808-add-current-page/` |
 | U15 | import-export | 11 | ✅ 完了 (2026-08-11) | `.steering/20260808-import-export/` |
-| U16 | trash | 12 | 未着手 | - |
+| U16 | trash | 12 | ✅ 完了 (2026-08-14) | `.steering/20260814-trash/` |
 | U17 | service-worker | 前提(1,信頼性) | 未着手 | - |
 | U19 | popup-state-restore | 13 | ✅ 完了 (2026-08-08) | `.steering/20260807-popup-state-restore/` |
 | U18 | release-prep | リリース準備 | 未着手 | - |
