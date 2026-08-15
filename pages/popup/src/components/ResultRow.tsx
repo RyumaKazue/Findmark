@@ -21,7 +21,10 @@ interface ResultRowProps {
   dimmed?: boolean;
   /** クリックで開く。 */
   onOpen: () => void;
-  /** ホバーで選択インデックスを合わせる。 */
+  /**
+   * ホバーで選択インデックスを合わせる。**実際にマウスが動いたときだけ**発火する（`onMouseMove` に結線）。
+   * 理由は `<button>` の `onMouseMove` のコメントを参照。
+   */
   onHover: () => void;
   /** 別名エリアのクリックで別名編集に入る（ALIAS_EDIT）。 */
   onEnterAliasEdit?: () => void;
@@ -185,7 +188,14 @@ export const ResultRow = ({
       type="button"
       onClick={handleClick}
       onDoubleClick={onEnterInlineEdit}
-      onMouseEnter={onHover}
+      // ホバー選択は `onMouseEnter` ではなく `onMouseMove` に結線する。`↑↓` で選択が可視範囲の端に達すると
+      // `ResultList` の追従 effect が `scrollTop` をずらすが、Chrome はマウスを動かしていなくても
+      // 「スクロールでカーソル下の要素が変わった」時点で `mouseenter` を発火する（仮想スクロールは行を
+      // `node.id` キーで再マウントするため確実に発火する）。その結果、キーボードで進めた選択が
+      // 「カーソルが乗っているだけの行」に引き戻されていた。`onMouseMove` は静止したカーソルでは発火しないため、
+      // 「マウスを動かしたときだけホバー選択する」という本来の意図をそのまま表現できる。
+      // 同じ行の中での移動は `setSelectedIndex` が同値となり React が再レンダーを省くため、コストも増えない。
+      onMouseMove={onHover}
       onMouseDown={handleMouseDown}
       title={item.node.title}
       className={cn(

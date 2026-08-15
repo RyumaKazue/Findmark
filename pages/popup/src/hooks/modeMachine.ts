@@ -92,6 +92,9 @@ type KeyIntent =
   | 'list:move-up'
   | 'list:move-down'
   | 'list:to-folder-tree'
+  // ↑ LIST の 4 インテントはいずれも端で循環する（`list-arrow-wrap`）。インデックスの計算そのものは
+  // 結果件数という UI 状態を要するため本モジュールには持たず、`listNavigationModel.moveSelectionIndex` が担う。
+  // 左ペイン（`folder:move-*`）は従来どおり端でクランプする（階層由来の並びのため循環させない）。
   // LIST 共通。
   | 'list:open'
   // FOLDER_TREE（U8a）。実行結線は U11（本単位は定義のみ）。
@@ -131,9 +134,10 @@ const hasCommandModifier = (e: KeyLike): boolean => Boolean(e.ctrlKey) || Boolea
  * `listFocus` は LIST 以外のモードでは参照されないため省略可能（既定 `'search'`）。U10 で
  * `InlineEdit` が `resolveKeyIntent('INLINE_EDIT', e)` を第3引数なしで呼ぶために追加した。
  * functional-design「既定モードのキー挙動（フォーカス位置別）」「編集モードのキー挙動」表に忠実:
- * - LIST + 検索ボックス: ↑↓=検索欄を離脱しつつ選択行を1つ動かす / ←→・Home=none（ネイティブのキャレット移動・
+ * - LIST + 検索ボックス: ↑↓=検索欄を離脱しつつ選択行を1つ動かす（端で循環）/ ←→・Home=none（ネイティブのキャレット移動・
  *   クエリ途中の修正を温存するため、意図的に何も割り当てない）/ Enter=開く / Escape=段階戻り（起点）
- * - LIST + 右ペイン: ↑↓=選択行の移動 / ←=左ペインへ / →=none / Enter=開く / Escape=段階戻り（起点）
+ * - LIST + 右ペイン: ↑↓=選択行の移動（端で循環: 先頭で ↑ → 末尾 / 末尾で ↓ → 先頭）/ ←=左ペインへ / →=none /
+ *   Enter=開く / Escape=段階戻り（起点）
  * - FOLDER_TREE: ↑↓=フォルダ間移動 / ←=親フォルダへ / →=右ペインへ / Enter=展開トグル / Home=「すべて」へ /
  *   Escape=段階戻り（起点）。実行結線は U11（本単位はインテントの定義のみ）
  * - INLINE_EDIT: Enter=確定 / Escape=破棄 / 上下=ネイティブのキャレット移動（none）
@@ -263,9 +267,84 @@ const isSearchFirstExempt = (mode: Mode): boolean =>
 /**
  * モード入口ショートカットの意図（対象行 ID は呼び出し側が与える）。
  * `delete`/`undo`（U10）はモード遷移を伴わないため厳密には「モード入口」ではないが、
- * 対象未確定のまま LIST で解決するという性質が同じため同じ関数・型に含める。
+ * 対象未確定のまま解決するという性質が同じため同じ関数・型に含める。
  */
 type ShortcutIntent = 'inline-edit' | 'alias-edit' | 'panel' | 'delete' | 'undo' | 'select-all' | 'add-current';
+
+/** `isShortcutEnabled` の判定文脈。Popup 側の state をそのまま写した値オブジェクト。 */
+interface ShortcutContext {
+  mode: Mode;
+  /** LIST モード内のフォーカス位置。LIST 以外では参照されない。 */
+  listFocus: ListFocus;
+  /** チェック選択の件数（0 なら「フォーカス中の1行」が対象になる）。 */
+  selectionCount: number;
+  /** 現在の表示結果の件数。 */
+  resultCount: number;
+}
+
+/**
+ * 検索ボックスにキャレットがあるか（`isShortcutEnabled` の内部ヘルパー）。
+ * ここでは `Delete`（文字の前方削除）・`Ctrl/Cmd+A`（テキスト全選択）といった**ネイティブのテキスト操作を奪わない**。
+ * 奪うとクエリの打ち直し・部分修正ができなくなるため（`←→` を検索ボックスで奪わないのと同じ理由）。
+ */
+const isCaretInSearch = (ctx: ShortcutContext): boolean => ctx.mode === 'LIST' && ctx.listFocus === 'search';
+
+/**
+ * 「右ペインでフォーカス中の行」を対象にできるか（`isShortcutEnabled` の内部ヘルパー）。
+ * **行に紐づく操作**（リネーム・別名編集・単一移動・単一削除）の前提であり、左ペイン（`FOLDER_TREE`）では
+ * 対象行が定まらないため成立しない。
+ */
+const hasFocusedRow = (ctx: ShortcutContext): boolean => ctx.mode === 'LIST' && ctx.resultCount > 0;
+
+/**
+ * ショートカットが「いま有効か」を判定する（副作用なし）。
+ *
+ * **判定の軸はモードではなく「対象が何か」**（functional-design「行に紐づく操作 / 行に紐づかない操作」）:
+ * - **行に紐づく操作**（対象＝右ペインでフォーカス中の行）は `LIST` でのみ有効。
+ * - **行に紐づかない操作**（対象＝チェック選択、または対象なし）は `LIST` / `FOLDER_TREE` の双方で有効。
+ *   U11 で起動直後の既定モードが `FOLDER_TREE` になったため、後者を `LIST` 限定にすると
+ *   「ポップアップを開いた直後に効かない」という主要導線の欠落になる。
+ *
+ * 有効条件を Popup 側の `if` に散らさず本関数へ集約するのは、**「モード分岐のどのブロックに置くか」という
+ * 位置依存の判断を無くす**ため。実際、置き場所の誤りによって `Ctrl/Cmd+D`（現在ページ登録）・
+ * `Ctrl/Cmd+M`（一括移動）・`Delete`（一括削除）・`Ctrl/Cmd+A`（全件選択）が `FOLDER_TREE` で
+ * 静かに無効化される不具合が繰り返し発生した。純粋関数にすることで、この組み合わせを単体テストで固定できる。
+ *
+ * `undo` の「トースト保持中（5秒以内）のみ有効」という条件は、モード・フォーカス・件数と無関係な外部状態のため
+ * **本関数では見ない**。呼び出し側が `isShortcutEnabled(...) && undoPending` の形で併せて判定する。
+ */
+const isShortcutEnabled = (intent: ShortcutIntent, ctx: ShortcutContext): boolean => {
+  // 自前の文字入力 UI を持つモードでは一切横取りしない（既存の規律を全ショートカットへ一括適用する）。
+  if (isSearchFirstExempt(ctx.mode)) {
+    return false;
+  }
+  switch (intent) {
+    // 行に紐づく操作。
+    case 'inline-edit':
+    case 'alias-edit':
+      return hasFocusedRow(ctx);
+    // 対象が選択状態で変わる操作。選択あり＝一括（左ペインでも可）/ 選択なし＝単一（LIST のみ）。
+    case 'panel':
+      return ctx.selectionCount > 0 ? ctx.resultCount > 0 : hasFocusedRow(ctx);
+    case 'delete':
+      // 検索ボックスでは常にネイティブの前方削除を優先する（選択の有無を問わない）。
+      if (isCaretInSearch(ctx)) {
+        return false;
+      }
+      return ctx.selectionCount > 0 ? ctx.resultCount > 0 : hasFocusedRow(ctx);
+    // 行に紐づかない操作。
+    case 'select-all':
+      // 検索ボックスのネイティブなテキスト全選択を奪わない。それ以外は左ペインでも有効。
+      return !isCaretInSearch(ctx) && ctx.resultCount > 0;
+    case 'undo':
+    case 'add-current':
+      // 対象がフォーカス位置にも結果件数にも依存しないため、モード適合のみで有効。
+      return true;
+    default:
+      // `ShortcutIntent` に値が増えたときの防御的デフォルト（`modeReducer` と同じ方針）。
+      return false;
+  }
+};
 
 /**
  * モード入口ショートカットの定義（ドキュメント兼マッチング用の単一集約）。
@@ -319,6 +398,7 @@ export {
   isSearchFirstExempt,
   SHORTCUTS,
   resolveShortcutIntent,
+  isShortcutEnabled,
 };
 export type {
   Mode,
@@ -332,4 +412,5 @@ export type {
   EscapeStep,
   PrintableKeyLike,
   ShortcutIntent,
+  ShortcutContext,
 };

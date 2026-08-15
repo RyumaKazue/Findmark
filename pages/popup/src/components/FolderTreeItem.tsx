@@ -117,60 +117,78 @@ export const FolderTreeItem = ({
   return (
     <div ref={registerRef} role="treeitem" aria-selected={scoped} className="flex h-[30px] items-center">
       <IndentGuides depth={row.depth} />
-      {/* 展開トグル（子ありのみ）。子なしは同寸の空枠でインデントを揃える。 */}
-      {hasChildren ? (
-        <button
-          type="button"
-          aria-label={expanded ? t('popupTreeCollapse') : t('popupTreeExpand')}
-          aria-expanded={expanded}
-          onMouseDown={preventFocusSteal}
-          onClick={onToggleExpand}
-          className={cn(
-            'flex size-5 flex-none cursor-pointer items-center justify-center rounded',
-            scopedStrong && 'text-white/75 hover:bg-white/20',
-            scopedMuted && 'text-accent-strong hover:bg-white/40',
-            !scoped && 'text-triangle hover:bg-accent-bg',
-          )}>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            aria-hidden="true"
-            className={cn('transition-transform', expanded && 'rotate-90')}>
-            <path
-              d="M3.5 2 L6.5 5 L3.5 8"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      ) : (
-        <span aria-hidden="true" className="size-5 flex-none" />
-      )}
-      {/* スコープ選択（子なしフォルダも押下可）。data-folder-id は D&D のドロップ先判定（elementFromPoint）用。 */}
-      <button
-        type="button"
-        aria-current={scoped ? 'true' : undefined}
-        title={folder.title}
+      {/*
+        行の強調（accent 塗り・角丸・ホバー）は chevron とフォルダ名の**両方を包む**このラッパが持つ。
+        design mock（docs/design/Findmark Popup.dc.html L61）の選択中フォルダ行は塗りの内側に三角があり、
+        README「三角は rgba(255,255,255,0.75)」もそれを前提にした記述。U11 で押下対象を2つのボタンへ
+        分離した際に塗りが「名前ボタンだけ」に縮み、chevron が明るい背景の上に取り残されて
+        白75%が見えなくなっていた。インデントガイド線は塗りの外に残す（design 2a）。
+      */}
+      <div
+        // D&D のドロップ先判定（`useDragAndDrop` の `elementFromPoint` → `closest('[data-folder-id]')`）は
+        // **ハイライト（下の dropTarget outline）と同じ要素**に置く。名前ボタン側に残すと、光っている範囲より
+        // 実際に落とせる範囲が狭くなる（chevron 上・ラッパの padding 上でドロップが効かない）。
         data-folder-id={folder.id}
-        onMouseDown={preventFocusSteal}
-        onClick={onSelectScope}
         className={cn(
-          'flex h-[30px] flex-1 cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-md px-1.5 text-left text-[14px]',
+          'flex h-[30px] flex-1 items-center gap-[6px] rounded-md px-1.5 text-[14px]',
           scopedStrong && 'bg-accent font-bold text-white',
           scopedMuted && 'bg-accent-bg text-accent-strong font-bold',
           !scoped && 'text-ink-2 hover:bg-accent-bg',
-          // D&D ドロップ先候補（AC-2/AC-3）: 破線でハイライト。outline はレイアウトに影響しない。
+          // D&D ドロップ先候補（U12 AC-2/AC-3）: 破線でハイライト。outline はレイアウトに影響しない。
           dropTarget && 'outline-accent outline-dashed outline-2 -outline-offset-2',
         )}>
-        <span aria-hidden="true" className="text-[15px]">
-          {hasChildren && expanded ? '📂' : '📁'}
-        </span>
-        <span>{folder.title}</span>
-      </button>
+        {/* 展開トグル（子ありのみ）。子なしは同寸の空枠でインデントを揃える。 */}
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-label={expanded ? t('popupTreeCollapse') : t('popupTreeExpand')}
+            // aria-label はスクリーンリーダー用でツールチップにならないため、マウス利用者向けに title も出す。
+            title={expanded ? t('popupTreeCollapse') : t('popupTreeExpand')}
+            aria-expanded={expanded}
+            onMouseDown={preventFocusSteal}
+            onClick={onToggleExpand}
+            className={cn(
+              'flex size-5 flex-none cursor-pointer items-center justify-center rounded',
+              // スコープ中の行は**静止状態でも背景を持たせる**。キーボード操作中はホバーが起きないため、
+              // ホバー時にしか手掛かりが出ないと「ここを押せば開ける」と分からない（U11 AC-8 の強化）。
+              scopedStrong && 'bg-white/20 text-white hover:bg-white/35',
+              scopedMuted && 'bg-accent/15 text-accent-strong hover:bg-accent/25',
+              // 非スコープ行は従来どおりホバーのみ（220px の左ペインで全行に背景を出すと煩雑になるため）。
+              !scoped && 'text-triangle hover:bg-accent-bg',
+            )}>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              aria-hidden="true"
+              className={cn('transition-transform', expanded && 'rotate-90')}>
+              <path
+                d="M3.5 2 L6.5 5 L3.5 8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : (
+          <span aria-hidden="true" className="size-5 flex-none" />
+        )}
+        {/* スコープ選択（子なしフォルダも押下可）。ドロップ先判定用の data-folder-id は親ラッパが持つ。 */}
+        <button
+          type="button"
+          aria-current={scoped ? 'true' : undefined}
+          title={folder.title}
+          onMouseDown={preventFocusSteal}
+          onClick={onSelectScope}
+          className="flex h-[30px] flex-1 cursor-pointer items-center gap-[6px] whitespace-nowrap text-left">
+          <span aria-hidden="true" className="text-[15px]">
+            {hasChildren && expanded ? '📂' : '📁'}
+          </span>
+          <span>{folder.title}</span>
+        </button>
+      </div>
     </div>
   );
 };

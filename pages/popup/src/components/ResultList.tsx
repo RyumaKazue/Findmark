@@ -33,7 +33,7 @@ interface ResultListProps {
   editingInlineId?: string | null;
   /** 指定インデックスのブックマークを開く。 */
   onOpen: (index: number) => void;
-  /** ホバーで選択インデックスを合わせる。 */
+  /** ホバーで選択インデックスを合わせる（実際にマウスが動いたときのみ。`ResultRow` の `onMouseMove` を参照）。 */
   onHover: (index: number) => void;
   /** 指定インデックスの行で別名編集に入る。 */
   onEnterAliasEdit?: (index: number) => void;

@@ -4,6 +4,7 @@ import { buildMoveCandidates, clampIndex, filterCandidates } from './movePanelMo
 import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
+import { useScrollSelectedIntoView } from '@src/hooks/useScrollSelectedIntoView';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderTreeNode } from './folderTreeModel.js';
 import type { AddCurrentEntry } from '@src/hooks/useAddCurrent';
@@ -61,6 +62,7 @@ export const AddCurrentPanel = ({
   const [folderIndex, setFolderIndex] = useState(0);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const folderListRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // entry のタイトルが外部要因（別行の同時編集は無いが将来の再オープン等）で変わったら下書きを合わせる。
@@ -91,6 +93,16 @@ export const AddCurrentPanel = ({
   useEffect(() => {
     setFolderIndex(0);
   }, [folderQuery]);
+
+  // 選択候補が可視範囲（max-h-[160px]）の外なら追従する（`MovePanel` と共通のフック）。
+  // これが無いと `↑↓` でインデックスだけが動き、選択中の候補が画面外へ消えたままになる。
+  //
+  // `folderOpen` を deps に含めるのは、**閉じて開き直したときに追従をやり直す**ため。本パネルの
+  // ドロップダウンは `Escape` で閉じても `folderIndex` をリセットしないため、選択を下方へ動かしてから
+  // 閉じ、クエリを変えずに開き直すと `folderIndex`/`filtered` が同一のまま新しいリスト DOM がマウントされ、
+  // effect が再実行されずに選択が可視範囲外のまま表示されてしまう（`MovePanel` はパネルごと
+  // unmount されるためこの経路が無い）。
+  useScrollSelectedIntoView(folderListRef, [folderIndex, filtered, folderOpen]);
 
   useEffect(() => {
     if (folderOpen) {
@@ -255,7 +267,7 @@ export const AddCurrentPanel = ({
                 placeholder={t('popupFolderFilterPlaceholder')}
                 className="border-line-row text-ink h-[34px] border-b px-2.5 text-[13px] outline-none"
               />
-              <div className="max-h-[160px] overflow-y-auto p-1">
+              <div ref={folderListRef} className="max-h-[160px] overflow-y-auto p-1">
                 {filtered.length === 0 ? (
                   <div className="text-ink-faint px-2 py-3 text-center text-[11.5px]">{t('popupFolderNoMatch')}</div>
                 ) : (
@@ -263,6 +275,8 @@ export const AddCurrentPanel = ({
                     <button
                       key={c.id}
                       type="button"
+                      // 選択状態を DOM 属性へ出す（`useScrollSelectedIntoView` が querySelector で拾う・MovePanel と同方式）。
+                      data-selected={i === folderIndex}
                       // mousedown での blur（＝ドロップダウンの閉じ）を防ぎ click を確実に発火させる（MovePanel と同方式）。
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => confirmFolder(i)}

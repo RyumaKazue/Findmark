@@ -2,6 +2,7 @@ import { buildMoveCandidates, clampIndex, filterCandidates } from './movePanelMo
 import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
+import { useScrollSelectedIntoView } from '@src/hooks/useScrollSelectedIntoView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderTreeNode } from './folderTreeModel.js';
 import type { RefObject } from 'react';
@@ -72,10 +73,8 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
     setIndex(0);
   }, [query]);
 
-  // 選択候補が可視範囲外なら追従する。
-  useEffect(() => {
-    listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' });
-  }, [index, filtered]);
+  // 選択候補が可視範囲外なら追従する（`AddCurrentPanel` と共通のフック）。
+  useScrollSelectedIntoView(listRef, [index, filtered]);
 
   const confirmAt = useCallback(
     (i: number) => {
@@ -140,7 +139,11 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
                   aria-disabled={c.disabled}
                   tabIndex={-1}
                   onMouseDown={e => e.preventDefault()}
-                  onMouseEnter={() => setIndex(i)}
+                  // ホバー選択は `onMouseEnter` ではなく `onMouseMove` に結線する（`ResultRow` と同じ理由）。
+                  // `↑↓` で候補を送ると L77 の `scrollIntoView` がリストをスクロールさせるが、Chrome は
+                  // マウスを動かしていなくてもカーソル下の要素が変わった時点で `mouseenter` を発火するため、
+                  // キーボードで進めた候補が「カーソルが乗っているだけの候補」に引き戻されていた。
+                  onMouseMove={() => setIndex(i)}
                   onClick={() => confirmAt(i)}
                   className={cn(
                     'flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left',
