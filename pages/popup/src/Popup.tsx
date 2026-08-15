@@ -17,6 +17,7 @@ import { moveSelectionIndex } from '@src/hooks/listNavigationModel';
 import {
   isSearchFirstExempt,
   isSearchFirstTriggerKey,
+  isShortcutEnabled,
   resolveEscapeStep,
   resolveShortcutIntent,
   toFocusArea,
@@ -508,18 +509,6 @@ const Popup = () => {
       const input = searchInputRef.current;
       const inInput = input !== null && e.target === input;
 
-      // アンドゥ（Ctrl/Cmd+Z）はトースト表示中（保持あり）のときのみ乗っ取る。ただし自前の
-      // 文字入力 UI を持つモード（INLINE_EDIT/ALIAS_EDIT/PANEL）ではネイティブの取り消し
-      // （フォーム内テキストの入力取り消し）を優先し、乗っ取らない（`isSearchFirstExempt` と
-      // 同じ判定を再利用。実装検証で「削除直後5秒以内に別行を編集し始めた場合、編集中の
-      // テキスト取り消しのつもりの Ctrl+Z が無関係な削除の復元を誤発動させる」懸念が指摘されたため）。
-      // 保持が無ければ何もせずネイティブの取り消しに委ねる（U10）。
-      if (resolveShortcutIntent(e) === 'undo' && undoPending && !isSearchFirstExempt(currentMode)) {
-        e.preventDefault();
-        undoLatest();
-        return;
-      }
-
       // Escape は選択中（複数選択）があれば最初に選択解除する（既存の段階戻りより前段・U13）。
       // PANEL/INLINE_EDIT/ALIAS_EDIT/DRAG は自前の Escape 挙動を持つため対象外にする。
       if (e.key === 'Escape' && selectionCount > 0 && (currentMode === 'LIST' || currentMode === 'FOLDER_TREE')) {
@@ -528,65 +517,71 @@ const Popup = () => {
         return;
       }
 
-      // Ctrl(Cmd)+D: 現在のページを登録する（U14）。**対象行を問わない操作**のため、行に紐づく他の
-      // ショートカット（Ctrl+M / F2 / Delete 等）と違い LIST 限定にしない。U11 で起動直後の既定モードが
-      // FOLDER_TREE になったため、LIST ブランチの内側に置いたままだと「ポップアップを開いた直後の Ctrl+D が
-      // 効かない」という主要導線の欠落になる。自前の文字入力 UI を持つモード（INLINE_EDIT/ALIAS_EDIT/
-      // PANEL/DRAG）では横取りしない（アンドゥと同じ `isSearchFirstExempt` を再利用する）。
-      if (resolveShortcutIntent(e) === 'add-current' && !isSearchFirstExempt(currentMode)) {
-        e.preventDefault();
-        void handleOpenAddCurrent();
-        return;
-      }
-
-      // Ctrl(Cmd)+M（選択中）: 一括移動パネルを開く（U13）。**対象がチェック選択そのもの**でフォーカス位置に
-      // 依存しないため、Ctrl+D と同じく LIST 限定にしない。一括操作バー（`BulkActionBar`）は選択さえあれば
-      // モードを問わず表示されるので、FOLDER_TREE でチェックした直後にキーでもボタンでも移動できる必要がある。
-      // 選択が無い場合の単一行移動は「フォーカス中の結果行」が対象のため、下の LIST ブランチに残す。
-      if (resolveShortcutIntent(e) === 'panel' && selectionCount > 0 && !isSearchFirstExempt(currentMode)) {
-        e.preventDefault();
-        openBulkMovePanel();
-        return;
+      // モード入口/行操作ショートカット（U8・U10・U13・U14）。
+      // **有効条件は `isShortcutEnabled`（純粋関数）に集約し、ここには実行だけを書く。**
+      // 以前はモード分岐（`if (currentMode === 'LIST')`）の内外に条件が散在しており、行に紐づかない操作
+      // （現在ページ登録・一括移動・一括削除・全件選択）を内側に置いてしまうと FOLDER_TREE で静かに
+      // 無効化される、という同型の不具合が繰り返し発生した。位置依存の判断を無くすため単一ブロックに集約する。
+      const shortcutIntent = resolveShortcutIntent(e);
+      if (
+        shortcutIntent !== null &&
+        isShortcutEnabled(shortcutIntent, {
+          mode: currentMode,
+          listFocus,
+          selectionCount,
+          resultCount: results.length,
+        })
+      ) {
+        switch (shortcutIntent) {
+          case 'undo':
+            // トースト表示中（保持あり）のときのみ乗っ取る。保持が無ければ何もせずネイティブの取り消しへ
+            // 委ねる（U10）。この判定だけはモード/フォーカスと無関係な外部状態のためここで見る。
+            if (!undoPending) {
+              break;
+            }
+            e.preventDefault();
+            undoLatest();
+            return;
+          case 'add-current':
+            e.preventDefault();
+            void handleOpenAddCurrent();
+            return;
+          case 'panel':
+            // 選択中（複数選択）は一括移動パネルへ、それ以外はフォーカス中の行の移動パネルへ（U13）。
+            e.preventDefault();
+            if (selectionCount > 0) {
+              openBulkMovePanel();
+            } else {
+              enterPanel();
+            }
+            return;
+          case 'delete':
+            // 選択中（複数選択）は一括削除へ、それ以外はフォーカス中の行の削除へ（U13）。
+            e.preventDefault();
+            if (selectionCount > 0) {
+              handleBulkDelete();
+            } else {
+              handleDeleteAt(selectedIndex);
+            }
+            return;
+          case 'alias-edit':
+            e.preventDefault();
+            enterAliasEditAt(selectedIndex);
+            return;
+          case 'inline-edit':
+            e.preventDefault();
+            enterInlineEditAt(selectedIndex);
+            return;
+          case 'select-all':
+            e.preventDefault();
+            selectAllRows(orderedIds);
+            return;
+          default:
+            break;
+        }
       }
 
       if (currentMode === 'LIST') {
-        // モード入口/行操作ショートカット（U8・U10）。
-        const shortcutIntent = resolveShortcutIntent(e);
-        if (shortcutIntent === 'alias-edit' && results.length > 0) {
-          e.preventDefault();
-          enterAliasEditAt(selectedIndex);
-          return;
-        }
-        if (shortcutIntent === 'inline-edit' && results.length > 0) {
-          e.preventDefault();
-          enterInlineEditAt(selectedIndex);
-          return;
-        }
-        // Ctrl(Cmd)+M: フォルダ選択パネルを開く（フォーカス中の結果行が対象）。
-        // 選択中（複数選択）の一括移動は上の共通ブロックが処理済みのため、ここへは到達しない。
-        if (shortcutIntent === 'panel' && results.length > 0) {
-          e.preventDefault();
-          enterPanel();
-          return;
-        }
-        // 検索ボックスにフォーカスがある間の Delete は文字の前方削除のまま（ブックマークを削除しない）。
-        // 選択中（複数選択）は一括削除へ（U13）。
-        if (shortcutIntent === 'delete' && listFocus === 'result' && results.length > 0) {
-          e.preventDefault();
-          if (selectionCount > 0) {
-            handleBulkDelete();
-          } else {
-            handleDeleteAt(selectedIndex);
-          }
-          return;
-        }
-        // Ctrl(Cmd)+A: 全件選択（U13）。検索ボックスのネイティブなテキスト全選択を奪わないため、
-        // 検索ボックスにフォーカスがある間（listFocus==='search'）は素通しする。
-        if (shortcutIntent === 'select-all' && listFocus !== 'search' && results.length > 0) {
-          e.preventDefault();
-          selectAllRows(orderedIds);
-          return;
-        }
         const intent = resolveKey(e, listFocus);
         switch (intent) {
           case 'list:leave-search-up':

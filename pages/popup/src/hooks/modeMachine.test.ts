@@ -3,6 +3,7 @@ import {
   isPrintableKey,
   isSearchFirstExempt,
   isSearchFirstTriggerKey,
+  isShortcutEnabled,
   modeReducer,
   resolveEscapeStep,
   resolveKeyIntent,
@@ -10,7 +11,7 @@ import {
   toFocusArea,
 } from './modeMachine.js';
 import { describe, expect, it } from 'vitest';
-import type { Mode, ModeState } from './modeMachine.js';
+import type { Mode, ModeState, ShortcutContext, ShortcutIntent } from './modeMachine.js';
 
 const list: ModeState = { mode: 'LIST', targetId: null };
 const folderTree: ModeState = { mode: 'FOLDER_TREE', targetId: null };
@@ -301,5 +302,141 @@ describe('resolveShortcutIntent', () => {
 
   it('Ctrl(⌘)+Shift+D は add-current にしない', () => {
     expect(resolveShortcutIntent({ key: 'd', ctrlKey: true, shiftKey: true })).toBeNull();
+  });
+});
+
+describe('isShortcutEnabled', () => {
+  /** 判定文脈のビルダー。既定は「LIST + 右ペイン / 選択なし / 結果20件」（最も一般的な操作状態）。 */
+  const ctx = (over: Partial<ShortcutContext> = {}): ShortcutContext => ({
+    mode: 'LIST',
+    listFocus: 'result',
+    selectionCount: 0,
+    resultCount: 20,
+    ...over,
+  });
+
+  const ALL_INTENTS: ShortcutIntent[] = [
+    'inline-edit',
+    'alias-edit',
+    'panel',
+    'delete',
+    'undo',
+    'select-all',
+    'add-current',
+  ];
+
+  describe('delete（AC-1 / AC-2）', () => {
+    it('FOLDER_TREE + 選択あり → 一括削除として有効（AC-1）', () => {
+      expect(isShortcutEnabled('delete', ctx({ mode: 'FOLDER_TREE', selectionCount: 3 }))).toBe(true);
+    });
+
+    it('FOLDER_TREE + 選択なし → 無効（左ペインでは単一削除の対象行が定まらない・AC-2）', () => {
+      expect(isShortcutEnabled('delete', ctx({ mode: 'FOLDER_TREE', selectionCount: 0 }))).toBe(false);
+    });
+
+    it('LIST + 右ペイン + 選択なし → 単一削除として有効（AC-2）', () => {
+      expect(isShortcutEnabled('delete', ctx())).toBe(true);
+    });
+
+    it('LIST + 検索ボックス → 選択があってもネイティブの前方削除を優先して無効（AC-2）', () => {
+      expect(isShortcutEnabled('delete', ctx({ listFocus: 'search', selectionCount: 3 }))).toBe(false);
+      expect(isShortcutEnabled('delete', ctx({ listFocus: 'search', selectionCount: 0 }))).toBe(false);
+    });
+
+    it('結果0件では無効（AC-4）', () => {
+      expect(isShortcutEnabled('delete', ctx({ resultCount: 0 }))).toBe(false);
+      expect(isShortcutEnabled('delete', ctx({ mode: 'FOLDER_TREE', selectionCount: 3, resultCount: 0 }))).toBe(false);
+    });
+  });
+
+  describe('select-all（AC-3）', () => {
+    it('FOLDER_TREE → 有効（AC-3）', () => {
+      expect(isShortcutEnabled('select-all', ctx({ mode: 'FOLDER_TREE' }))).toBe(true);
+    });
+
+    it('LIST + 検索ボックス → ネイティブのテキスト全選択を奪わないため無効（AC-3）', () => {
+      expect(isShortcutEnabled('select-all', ctx({ listFocus: 'search' }))).toBe(false);
+    });
+
+    it('LIST + 右ペイン → 有効（AC-3）', () => {
+      expect(isShortcutEnabled('select-all', ctx())).toBe(true);
+    });
+
+    it('結果0件では無効（AC-4）', () => {
+      expect(isShortcutEnabled('select-all', ctx({ resultCount: 0 }))).toBe(false);
+      expect(isShortcutEnabled('select-all', ctx({ mode: 'FOLDER_TREE', resultCount: 0 }))).toBe(false);
+    });
+  });
+
+  describe('panel（前単位 list-arrow-wrap で修正済みの挙動の固定・AC-4）', () => {
+    it('FOLDER_TREE + 選択あり → 一括移動として有効', () => {
+      expect(isShortcutEnabled('panel', ctx({ mode: 'FOLDER_TREE', selectionCount: 2 }))).toBe(true);
+    });
+
+    it('FOLDER_TREE + 選択なし → 無効（単一移動の対象行が定まらない）', () => {
+      expect(isShortcutEnabled('panel', ctx({ mode: 'FOLDER_TREE', selectionCount: 0 }))).toBe(false);
+    });
+
+    it('LIST + 選択なし + 結果あり → 単一移動として有効', () => {
+      expect(isShortcutEnabled('panel', ctx())).toBe(true);
+    });
+
+    it('LIST + 検索ボックスでも有効（Delete/Ctrl+A と違いネイティブの意味を持たないため）', () => {
+      expect(isShortcutEnabled('panel', ctx({ listFocus: 'search' }))).toBe(true);
+    });
+  });
+
+  describe('選択ありなのに結果0件という不変条件違反への防御', () => {
+    // `Popup.tsx` はクエリ/スコープ変更時に必ず選択をクリアし、「選択は常に現在の表示結果の部分集合」
+    // という不変条件を保つため、この状態は本来到達しない。将来この不変条件を壊す経路が追加されたときに
+    // 気づけるよう、安全側（無効）へ倒すことを明示的に固定しておく。
+    it('panel / delete は選択があっても結果0件なら無効', () => {
+      expect(isShortcutEnabled('panel', ctx({ selectionCount: 2, resultCount: 0 }))).toBe(false);
+      expect(isShortcutEnabled('delete', ctx({ selectionCount: 2, resultCount: 0 }))).toBe(false);
+      expect(isShortcutEnabled('panel', ctx({ mode: 'FOLDER_TREE', selectionCount: 2, resultCount: 0 }))).toBe(false);
+      expect(isShortcutEnabled('delete', ctx({ mode: 'FOLDER_TREE', selectionCount: 2, resultCount: 0 }))).toBe(false);
+    });
+  });
+
+  describe('add-current / undo（対象を問わない操作・AC-4）', () => {
+    it('add-current は FOLDER_TREE でも有効（前単位で修正済みの挙動の固定）', () => {
+      expect(isShortcutEnabled('add-current', ctx({ mode: 'FOLDER_TREE' }))).toBe(true);
+    });
+
+    it('add-current は検索ボックス・結果0件でも有効（現在のタブが対象で結果に依存しない）', () => {
+      expect(isShortcutEnabled('add-current', ctx({ listFocus: 'search', resultCount: 0 }))).toBe(true);
+    });
+
+    it('undo は FOLDER_TREE でも有効（トースト保持の判定は呼び出し側の責務）', () => {
+      expect(isShortcutEnabled('undo', ctx({ mode: 'FOLDER_TREE' }))).toBe(true);
+    });
+  });
+
+  describe('inline-edit / alias-edit（行に紐づく操作・AC-4）', () => {
+    it('FOLDER_TREE では無効（対象行が定まらない）', () => {
+      expect(isShortcutEnabled('inline-edit', ctx({ mode: 'FOLDER_TREE' }))).toBe(false);
+      expect(isShortcutEnabled('alias-edit', ctx({ mode: 'FOLDER_TREE' }))).toBe(false);
+    });
+
+    it('LIST + 結果あり なら有効（フォーカスが検索ボックスでも対象は選択行）', () => {
+      expect(isShortcutEnabled('inline-edit', ctx())).toBe(true);
+      expect(isShortcutEnabled('alias-edit', ctx({ listFocus: 'search' }))).toBe(true);
+    });
+
+    it('結果0件では無効', () => {
+      expect(isShortcutEnabled('inline-edit', ctx({ resultCount: 0 }))).toBe(false);
+      expect(isShortcutEnabled('alias-edit', ctx({ resultCount: 0 }))).toBe(false);
+    });
+  });
+
+  describe('自前の文字入力 UI を持つモードでは全ショートカットを横取りしない（AC-4）', () => {
+    const exemptModes: Mode[] = ['INLINE_EDIT', 'ALIAS_EDIT', 'PANEL', 'DRAG'];
+    for (const mode of exemptModes) {
+      it(`${mode} では全インテントが無効`, () => {
+        for (const intent of ALL_INTENTS) {
+          expect(isShortcutEnabled(intent, ctx({ mode, selectionCount: 3 }))).toBe(false);
+        }
+      });
+    }
   });
 });
