@@ -2,6 +2,7 @@ import { buildMoveCandidates, clampIndex, filterCandidates } from './movePanelMo
 import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
+import { useScrollSelectedIntoView } from '@src/hooks/useScrollSelectedIntoView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderTreeNode } from './folderTreeModel.js';
 import type { RefObject } from 'react';
@@ -72,10 +73,8 @@ export const MovePanel = ({ folders, currentParentId, onConfirm, onClose, action
     setIndex(0);
   }, [query]);
 
-  // 選択候補が可視範囲外なら追従する。
-  useEffect(() => {
-    listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' });
-  }, [index, filtered]);
+  // 選択候補が可視範囲外なら追従する（`AddCurrentPanel` と共通のフック）。
+  useScrollSelectedIntoView(listRef, [index, filtered]);
 
   const confirmAt = useCallback(
     (i: number) => {
