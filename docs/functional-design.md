@@ -591,6 +591,55 @@ sequenceDiagram
 - 復元は URL をキーに別名を戻すため、ブックマークIDが変わっても別名が正しく再紐付けされる。
 - フォルダ削除時は配下のブックマーク・別名を含めツリーごと1つの TrashItem に保存する。
 
+### UC-5b: フォルダの削除(右クリックメニュー)
+
+**フォルダの削除は左ペインの右クリックメニューから行う**(`folder-delete`, 2026-08-16)。UC-5 の2層防御(即時アンドゥ+ゴミ箱)をそのまま使い、ゴミ箱へは**配下ツリーごと1項目**(`kind: 'folder'`)で退避する。
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Tree as FolderTree(左ペイン)
+    participant Popup
+    participant BM as BookmarkService
+    participant Alias as AliasStore
+    participant Trash as TrashStore
+
+    User->>Tree: フォルダ行を右クリック
+    Note over Tree: 既定メニューは抑止。スコープは変えない
+    Tree->>Popup: onFolderContextMenu(folderId, title, depth, x, y)
+    Popup-->>User: メニュー表示(最上位フォルダは「削除」無効)
+    User->>Popup: 「フォルダを削除」
+    Popup->>BM: getSubTree(id) → countContents
+    alt 中身あり(ブックマーク or サブフォルダ)
+        Popup-->>User: 確認ダイアログ(件数表示・既定フォーカスは[キャンセル])
+        User->>Popup: [削除する]
+    else 空フォルダ
+        Note over Popup: 確認なしで即削除
+    end
+    Popup->>BM: getSubTree(id) → TrashInput 組み立て(別名を埋める)
+    Popup->>BM: removeTree(id)
+    Popup->>Alias: remove(url) × 配下ブックマーク
+    Popup->>Trash: push(kind:'folder' + children 再帰)
+    Popup->>Popup: 索引から配下を除去 → 左ペイン再取得 → スコープ追従
+    Popup-->>User: トースト「「〜」を削除しました [元に戻す]」(5秒)
+
+    alt 5秒以内に元に戻す
+        User->>Popup: [元に戻す]
+        Popup->>Trash: restore(trashId)
+        Note over Trash,BM: フォルダ構造・別名ごと再帰復元(IDは新規採番)
+        Popup->>Popup: 索引を再構築 + 左ペイン再取得
+    end
+```
+
+**整合ルール(UC-5 に追加)**:
+- **退避データは削除前に作る**。削除後は部分木を読めないため、`getSubTree` → `TrashInput` 組み立て → `removeTree` の順を崩さない。
+- **`remove` と `removeTree` を使い分ける**。`chrome.bookmarks.remove` は中身のあるフォルダを拒否するため、フォルダは必ず `removeTree`。
+- **最上位フォルダ(「ブックマーク バー」等)は削除できない**(Chrome が拒否する)。メニュー項目を無効表示にして理由を示す。
+- **スコープが動くのは削除が実行されたときだけ**。右クリック(メニューを開くだけ)では絞り込みを変えない。削除対象が現在のスコープまたはその祖先なら親フォルダ(無ければ「すべて」)へ移す。
+- **アンドゥ後は検索索引を再構築する**。復元でノードのIDが新規採番されるため、部分更新(`addNode`)では索引と実データが食い違う。
+- ゴミ箱への退避に失敗した場合、削除自体は成功扱いにするが**アンドゥでは復元できない**旨をトーストで明示する(黙って何も起きない状態を作らない)。
+- ポップアップ全体でブラウザ既定のコンテキストメニューを抑止する。ただし**テキスト入力欄は除外**する(コピー/貼り付けを奪わない)。
+
 > **実装状況(U10, 2026-07-28 / U16, 2026-08-14)**: 第1層「即時アンドゥ(5秒)」を実装済み。`getFolderPath`/`getByUrl` の chrome API 往復は行わず、`SearchEngine` の検索索引が保持する `folderPath`/`aliases` から退避データを組み立てる(索引は既に `folderPath` を保持しているため)。第2層「ゴミ箱(30日)」も U16 で接続済み。`bookmarkService.remove` → `aliasStore.remove` の直後に `trashStore.push(...)` を呼び、即時アンドゥで復元した場合は `trashStore.remove(trashId)` で退避項目を取り消す(復元済みの重複防止)。復元(Options「ゴミ箱」タブ)は Popup とは別ページのため `SearchEngine` を呼ばず、`AliasStore` の更新のみ行う。Popup は起動のたびに `loadIndex` で実データから索引を作り直すため、復元後の内容は次回起動時に自然に反映される。
 
 ---

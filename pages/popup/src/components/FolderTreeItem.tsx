@@ -23,6 +23,11 @@ interface FolderTreeItemProps {
   onSelectScope: () => void;
   /** 「さらに N 件…」で残りを表示する。 */
   onRevealMore: () => void;
+  /**
+   * フォルダ行の右クリック（`folder-delete`）。ブラウザ既定メニューは本コンポーネントが抑止し、
+   * カーソル座標を親へ渡す。**フォルダ行にのみ結線する**ため、「すべて」/「さらに N 件…」行では発火しない。
+   */
+  onContextMenu?: (position: { x: number; y: number }) => void;
   /** スクロール追従のための行要素登録。 */
   registerRef: (el: HTMLElement | null) => void;
 }
@@ -62,6 +67,7 @@ export const FolderTreeItem = ({
   onToggleExpand,
   onSelectScope,
   onRevealMore,
+  onContextMenu,
   registerRef,
 }: FolderTreeItemProps) => {
   const { t } = useI18n();
@@ -129,6 +135,16 @@ export const FolderTreeItem = ({
         // **ハイライト（下の dropTarget outline）と同じ要素**に置く。名前ボタン側に残すと、光っている範囲より
         // 実際に落とせる範囲が狭くなる（chevron 上・ラッパの padding 上でドロップが効かない）。
         data-folder-id={folder.id}
+        // 右クリックメニュー（`folder-delete`）。ブラウザ既定のメニューを抑止して独自メニューを開く。
+        // ドロップ先判定と同じこのラッパに置くことで、chevron 上・行の余白でも同じように開く
+        // （行のどこを右クリックしても同じ結果になる＝押下位置による挙動差を作らない）。
+        onContextMenu={
+          onContextMenu &&
+          ((e: MouseEvent) => {
+            e.preventDefault();
+            onContextMenu({ x: e.clientX, y: e.clientY });
+          })
+        }
         className={cn(
           'flex h-[30px] flex-1 items-center gap-[6px] rounded-md px-1.5 text-[14px]',
           scopedStrong && 'bg-accent font-bold text-white',
