@@ -15,8 +15,14 @@ export const PopupShell = ({ header, sidebar, main }: PopupShellProps) => (
   <div className="bg-surface shadow-shell flex h-[560px] w-[760px] flex-col overflow-hidden rounded-xl">
     {header}
     <div className="flex min-h-0 flex-1">
-      <aside className="border-line bg-pane w-[220px] flex-none overflow-hidden border-r">{sidebar}</aside>
-      <main className="min-w-0 flex-1 overflow-hidden">{main}</main>
+      {/* `data-pane` は「押下位置がどちらのペインか」を DOM から判定するための目印（`alias-editor-close`）。
+          別名編集中の外側クリックを、右ペイン=閉じてクリックを飲む / それ以外=閉じるだけ、に振り分ける。 */}
+      <aside data-pane="folder" className="border-line bg-pane w-[220px] flex-none overflow-hidden border-r">
+        {sidebar}
+      </aside>
+      <main data-pane="result" className="min-w-0 flex-1 overflow-hidden">
+        {main}
+      </main>
     </div>
   </div>
 );

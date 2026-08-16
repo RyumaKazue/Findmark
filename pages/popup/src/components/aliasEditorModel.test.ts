@@ -3,6 +3,7 @@ import {
   MAX_ALIAS_LENGTH,
   commitAlias,
   orderMatchedFirst,
+  resolveOutsideClick,
   removeAt,
   removeLast,
 } from './aliasEditorModel.js';
@@ -84,5 +85,24 @@ describe('orderMatchedFirst', () => {
 
   it('存在しないマッチ指定は無視される', () => {
     expect(orderMatchedFirst(['a', 'b'], ['zzz'])).toEqual(['a', 'b']);
+  });
+});
+
+describe('resolveOutsideClick（別名編集中の押下の扱い）', () => {
+  it('編集の内側は何もしない（従来どおりの編集操作）', () => {
+    expect(resolveOutsideClick({ insideEditor: true, inResultPane: false })).toBe('ignore');
+  });
+
+  it('編集の内側なら右ペイン内でも何もしない（判定順序の固定）', () => {
+    // 編集行は右ペインの中にあるため、順序を逆にするとチップや入力欄へのクリックまで飲んでしまう。
+    expect(resolveOutsideClick({ insideEditor: true, inResultPane: true })).toBe('ignore');
+  });
+
+  it('右ペインの外側は閉じてクリックも飲む（ブックマークを開かせない）', () => {
+    expect(resolveOutsideClick({ insideEditor: false, inResultPane: true })).toBe('close-and-swallow');
+  });
+
+  it('左ペイン・ヘッダー（右ペイン外）は閉じるだけでクリックは通す', () => {
+    expect(resolveOutsideClick({ insideEditor: false, inResultPane: false })).toBe('close');
   });
 });

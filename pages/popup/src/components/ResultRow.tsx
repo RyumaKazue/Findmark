@@ -3,9 +3,10 @@ import { Favicon } from './Favicon.js';
 import { InlineEdit } from './InlineEdit.js';
 import { useI18n } from '@extension/i18n';
 import { cn } from '@extension/ui';
+import type { AliasEditorActions } from './AliasEditor.js';
 import type { CommitPlan, EditDraft } from './inlineEditModel.js';
 import type { SearchResultItem } from '@extension/shared';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, RefObject } from 'react';
 
 interface ResultRowProps {
   item: SearchResultItem;
@@ -19,6 +20,14 @@ interface ResultRowProps {
   editingInline?: boolean;
   /** 他の行が編集中（別名/インラインいずれか）で、この行を薄暗くするか。 */
   dimmed?: boolean;
+  /**
+   * **別のある行が別名編集中**で、この行が押しても「編集を閉じるだけ」の状態か（`alias-editor-close`）。
+   * true のとき指カーソルを出さない（押せるように見せない）。
+   *
+   * `dimmed` を流用しないのは、`dimmed` がインライン編集中も真になるため。インライン編集中の他行は
+   * クリックすると**実際にブックマークが開く**ので、そこまでカーソルを変えると逆向きの不一致になる。
+   */
+  aliasEditingElsewhere?: boolean;
   /** クリックで開く。 */
   onOpen: () => void;
   /**
@@ -32,6 +41,8 @@ interface ResultRowProps {
   onCommitAliases?: (aliases: string[]) => Promise<void> | void;
   /** 別名編集を終了する（別名編集中のみ使用）。 */
   onCloseAliasEdit?: () => void;
+  /** 別名編集の命令ハンドル（外側クリックからの終了用・`alias-editor-close`）。編集中の行にのみ渡る。 */
+  aliasEditorActionsRef?: RefObject<AliasEditorActions | null>;
   /** ダブルクリックでインライン編集に入る（INLINE_EDIT）。右クリックメニューからの実行は Popup 側で行う。 */
   onEnterInlineEdit?: () => void;
   /** インライン編集の確定内容を反映する（インライン編集中のみ使用）。 */
@@ -88,11 +99,13 @@ export const ResultRow = ({
   editingAlias = false,
   editingInline = false,
   dimmed = false,
+  aliasEditingElsewhere = false,
   onOpen,
   onHover,
   onEnterAliasEdit,
   onCommitAliases,
   onCloseAliasEdit,
+  aliasEditorActionsRef,
   onEnterInlineEdit,
   onCommitEdit,
   onCancelEdit,
@@ -126,7 +139,11 @@ export const ResultRow = ({
   // 別名編集中: 行は非ボタンのコンテナにし、1段目はテキスト、2段目を AliasEditor に差し替える。
   if (editingAlias) {
     return (
-      <div className="border-line-row bg-row-selected flex min-h-14 w-full flex-none flex-col justify-center gap-[7px] border-b px-4 py-2 text-left">
+      // `data-alias-editing` は外側クリック判定の目印（`alias-editor-close`）。1段目・ヒント行も含めて
+      // 「編集の内側」として扱うため、AliasEditor 自身ではなく行のラッパに付ける。
+      <div
+        data-alias-editing="true"
+        className="border-line-row bg-row-selected flex min-h-14 w-full flex-none flex-col justify-center gap-[7px] border-b px-4 py-2 text-left">
         {/* 1段目（テキスト表示のまま） */}
         <span className="flex items-center gap-[10px]">
           <Favicon url={item.node.url ?? ''} />
@@ -140,6 +157,7 @@ export const ResultRow = ({
             matchedAliases={item.matchedAliases}
             onCommit={onCommitAliases ?? (() => undefined)}
             onClose={onCloseAliasEdit ?? (() => undefined)}
+            actionsRef={aliasEditorActionsRef}
           />
         </div>
       </div>
@@ -237,6 +255,9 @@ export const ResultRow = ({
         checked && !selected && 'bg-row-selected',
         !selected && !checked && 'hover:bg-pane-3',
         dimmed && 'opacity-40',
+        // 別名編集中の他行は押しても「閉じるだけ」。Tailwind の preflight が `button { cursor: pointer }` を
+        // 当てるため、明示的に既定カーソルへ戻さないと押せるように見えてしまう（`alias-editor-close`）。
+        aliasEditingElsewhere && 'cursor-default',
       )}>
       {/* 1段目 */}
       <span className="flex items-center gap-[10px]">

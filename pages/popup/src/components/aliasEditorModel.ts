@@ -73,5 +73,41 @@ const orderMatchedFirst = (aliases: string[], matched: string[]): string[] => {
   return [...head, ...tail];
 };
 
-export { MAX_ALIASES, MAX_ALIAS_LENGTH, commitAlias, removeAt, removeLast, orderMatchedFirst };
-export type { NormalizeFn, CommitOutcome };
+/**
+ * 別名編集中に発生したポインタ押下の扱い（`alias-editor-close`）。
+ * - `ignore`: 編集の内側 → 何もしない（従来どおりの編集操作を続ける）
+ * - `close`: 閉じるだけ。**クリック先の操作はそのまま実行される**（左ペイン・ヘッダー）
+ * - `close-and-swallow`: 閉じたうえでクリック自体を無効化する（右ペイン）
+ */
+type OutsideClickAction = 'ignore' | 'close' | 'close-and-swallow';
+
+/** `resolveOutsideClick` の判定文脈。DOM 由来の真偽値だけを受け取る（要素そのものは渡さない）。 */
+interface OutsideClickContext {
+  /** 押下位置が編集中の行（`AliasEditor` を含む行）の内側か。 */
+  insideEditor: boolean;
+  /** 押下位置が右ペイン（結果リスト側）の内側か。 */
+  inResultPane: boolean;
+}
+
+/**
+ * 別名編集中の押下をどう扱うかを解決する（副作用なし）。
+ *
+ * **右ペインだけクリックを飲む理由**: 右ペインの押下先はほぼ結果行であり、そのまま通すとブックマークが開いて
+ * ポップアップごと閉じる＝編集していた文脈を失う。別名編集にはアンドゥが無いため、この事故のコストが大きい。
+ * 1回目は閉じるだけにし、意図が明確な2回目のクリックで開く。
+ *
+ * **左ペイン・ヘッダーを通す理由**: フォルダのスコープ変更・検索ボックスへの入力・「＋追加」は、押した結果が
+ * 破壊的でなく、1クリックで完了しないほうがむしろ不自然。閉じる処理だけを併走させる。
+ *
+ * `insideEditor` を最優先で見る。編集行は右ペインの内側にあるため、順序を逆にすると
+ * **編集中のチップや入力欄へのクリックまで飲んでしまう**。
+ */
+const resolveOutsideClick = (ctx: OutsideClickContext): OutsideClickAction => {
+  if (ctx.insideEditor) {
+    return 'ignore';
+  }
+  return ctx.inResultPane ? 'close-and-swallow' : 'close';
+};
+
+export { MAX_ALIASES, MAX_ALIAS_LENGTH, commitAlias, removeAt, removeLast, orderMatchedFirst, resolveOutsideClick };
+export type { NormalizeFn, CommitOutcome, OutsideClickAction, OutsideClickContext };
