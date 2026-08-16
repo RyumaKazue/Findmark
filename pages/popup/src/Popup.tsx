@@ -113,6 +113,9 @@ const Popup = () => {
     rangeTo: rangeToSelection,
     selectAll: selectAllRows,
     clear: clearSelection,
+    selectionMode,
+    exitSelectionMode,
+    toggleSelectionMode,
   } = useSelection();
   // フォルダ選択パネルが一括移動用（複数件対象）で開いているか（U13）。単一移動時は false。
   const [bulkMovePanel, setBulkMovePanel] = useState(false);
@@ -137,6 +140,8 @@ const Popup = () => {
 
   // クエリ or フォルダ選択が変わったら複数選択（チェック選択）もクリアする（U13）。選択は常に「現在の
   // 表示結果の部分集合」に保ち、幽霊選択・件数不整合・アンドゥ用退避データの欠落を構造的に避ける。
+  // `clearSelection` は**選択モードを維持**する（`selectionModel.clear`）。選択モード中に検索し直して
+  // 選び直す動線を、毎回モードの入れ直しで断ち切らないため（`selection-mode` AC-10）。
   useEffect(() => {
     clearSelection();
   }, [query, scopeFolderId, clearSelection]);
@@ -163,7 +168,8 @@ const Popup = () => {
     [results],
   );
 
-  // チェックボックス/Ctrl/Cmd+クリックで個別トグル、Shift+クリックで anchor からの範囲選択（U13）。
+  // 選択モード中の行クリック・通常モードの Ctrl/Cmd+クリックで個別トグル、Shift+クリックで anchor からの
+  // 範囲選択（U13 / `selection-mode`）。キーボードの Enter（`list:open`）も選択モード中はここへ倒す。
   const handleToggleSelect = useCallback(
     (index: number) => {
       const id = results[index]?.node.id;
@@ -322,14 +328,16 @@ const Popup = () => {
     [results, rowActions],
   );
 
-  // 選択中の全件を一括削除する（1アンドゥ単位・U13）。完了後は選択をクリアする。
+  // 選択中の全件を一括削除する（1アンドゥ単位・U13）。完了後は選択をクリアし、**選択モードも終了**して
+  // 通常モード（行クリック＝開く）へ戻す（`selection-mode` AC-6。モードに入ったままなのを忘れて次の
+  // クリックが意図せず選択になる、という取り違えを防ぐ）。
   const handleBulkDelete = useCallback(() => {
     if (selectedItems.length === 0) {
       return;
     }
     void rowActions.deleteRows(selectedItems);
-    clearSelection();
-  }, [selectedItems, rowActions, clearSelection]);
+    exitSelectionMode();
+  }, [selectedItems, rowActions, exitSelectionMode]);
 
   // インライン編集の対象が結果から消えた場合（検索条件変更等）は穏当に LIST へ戻す。
   useEffect(() => {
@@ -347,12 +355,12 @@ const Popup = () => {
       const folderPath = findFolderPath(folders, folderId);
       if (selectionCount > 1 && selectedIds.has(item.node.id)) {
         void rowActions.moveRows(selectedItems, folderId, folderPath);
-        clearSelection();
+        exitSelectionMode();
       } else {
         void rowActions.moveRow(item, folderId, folderPath);
       }
     },
-    [folders, rowActions, selectionCount, selectedIds, selectedItems, clearSelection],
+    [folders, rowActions, selectionCount, selectedIds, selectedItems, exitSelectionMode],
   );
 
   // D&D 結線。ドロップ先の自動展開（スプリングロード）は左ペインの命令ハンドル経由（キーボードと同じ経路）。
@@ -417,16 +425,17 @@ const Popup = () => {
     [movePanelItem, rowActions, closeMovePanel],
   );
 
-  // 一括移動パネルでフォルダを確定 → 選択全件を移動して選択をクリアする（1アンドゥ単位・U13）。
+  // 一括移動パネルでフォルダを確定 → 選択全件を移動し、選択と選択モードを終了する（1アンドゥ単位・U13 /
+  // `selection-mode` AC-6）。
   const handleBulkMoveConfirm = useCallback(
     (folderId: string, folderPath: string[]) => {
       if (selectedItems.length > 0) {
         void rowActions.moveRows(selectedItems, folderId, folderPath);
-        clearSelection();
+        exitSelectionMode();
       }
       closeMovePanel();
     },
-    [selectedItems, rowActions, clearSelection, closeMovePanel],
+    [selectedItems, rowActions, exitSelectionMode, closeMovePanel],
   );
 
   // ── U14: 現在ページ登録（AddCurrentPanel） ──
@@ -509,11 +518,13 @@ const Popup = () => {
       const input = searchInputRef.current;
       const inInput = input !== null && e.target === input;
 
-      // Escape は選択中（複数選択）があれば最初に選択解除する（既存の段階戻りより前段・U13）。
+      // Escape は選択モード中なら最初にモードを終了する（＋選択もクリア。既存の段階戻りより前段・
+      // `selection-mode` AC-8）。判定を「選択件数 > 0」ではなく選択モードにするのは、選択0件でモードだけ
+      // 残っている状態から Escape で抜けられないと、行クリックが「選ぶ」のまま出口を失うため。
       // PANEL/INLINE_EDIT/ALIAS_EDIT/DRAG は自前の Escape 挙動を持つため対象外にする。
-      if (e.key === 'Escape' && selectionCount > 0 && (currentMode === 'LIST' || currentMode === 'FOLDER_TREE')) {
+      if (e.key === 'Escape' && selectionMode && (currentMode === 'LIST' || currentMode === 'FOLDER_TREE')) {
         e.preventDefault();
-        clearSelection();
+        exitSelectionMode();
         return;
       }
 
@@ -530,6 +541,7 @@ const Popup = () => {
           listFocus,
           selectionCount,
           resultCount: results.length,
+          selectionMode,
         })
       ) {
         switch (shortcutIntent) {
@@ -610,7 +622,15 @@ const Popup = () => {
               return;
             }
             e.preventDefault();
-            openAt(selectedIndex);
+            // `list:open` は「フォーカス行を活性化する」の意味であり、活性化が何かはモードで決まる
+            // （`selection-mode`）。選択モード中はマウスのクリックと同じく選択トグルにし、キーボードと
+            // マウスで結果が食い違わないようにする（キーの意味論＝`modeMachine` は状態を持たないため、
+            // その解釈はここで行う）。
+            if (selectionMode) {
+              handleToggleSelect(selectedIndex);
+            } else {
+              openAt(selectedIndex);
+            }
             return;
           case 'escape:step-back':
             e.preventDefault();
@@ -745,7 +765,9 @@ const Popup = () => {
     undoPending,
     undoLatest,
     selectionCount,
-    clearSelection,
+    selectionMode,
+    exitSelectionMode,
+    handleToggleSelect,
     selectAllRows,
     orderedIds,
     openBulkMovePanel,
@@ -894,13 +916,14 @@ const Popup = () => {
     <div className="relative">
       <PopupShell
         header={
-          // 1件以上選択中はヘッダーを一括操作バーへ差し替える（デザイン状態1f・U13）。
+          // 1件以上選択中はヘッダーを一括操作バーへ差し替える（デザイン状態1f・U13）。選択モード中でも
+          // 選択0件の間は `SearchHeader`（トグルが ON 表示）のままにし、検索して選び直せるようにする。
           selectionCount > 0 ? (
             <BulkActionBar
               count={selectionCount}
               onMove={openBulkMovePanel}
               onDelete={handleBulkDelete}
-              onClear={clearSelection}
+              onClear={exitSelectionMode}
             />
           ) : (
             <div className={dimHeaderAndSidebar ? 'opacity-45' : undefined}>
@@ -910,6 +933,8 @@ const Popup = () => {
                 inputRef={searchInputRef}
                 scopePath={scopePath}
                 onAddCurrent={() => void handleOpenAddCurrent()}
+                selectionMode={selectionMode}
+                onToggleSelectionMode={toggleSelectionMode}
               />
             </div>
           )
@@ -957,7 +982,7 @@ const Popup = () => {
               onCancelEdit={handleCancelEdit}
               onDeleteRow={handleDeleteAt}
               onRowMouseDown={(index, e) => dnd.onRowMouseDown(results[index], e)}
-              selectionActive={selectionCount > 0}
+              selectionMode={selectionMode}
               selectedIds={selectedIds}
               onToggleSelect={handleToggleSelect}
               onRangeSelect={handleRangeSelect}

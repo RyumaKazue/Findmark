@@ -280,6 +280,11 @@ interface ShortcutContext {
   selectionCount: number;
   /** 現在の表示結果の件数。 */
   resultCount: number;
+  /**
+   * 選択モード中か（`selectionModel.active`・`selection-mode`）。
+   * 行クリックが「選ぶ」になっている間は、行の編集導線と「フォーカス行への破壊的操作」を止める。
+   */
+  selectionMode: boolean;
 }
 
 /**
@@ -312,6 +317,12 @@ const hasFocusedRow = (ctx: ShortcutContext): boolean => ctx.mode === 'LIST' && 
  *
  * `undo` の「トースト保持中（5秒以内）のみ有効」という条件は、モード・フォーカス・件数と無関係な外部状態のため
  * **本関数では見ない**。呼び出し側が `isShortcutEnabled(...) && undoPending` の形で併せて判定する。
+ *
+ * `selection-mode` で**選択モード**の軸が加わった。選択モード中は行クリックが「選ぶ」に変わるため:
+ * - 行の編集（`inline-edit`/`alias-edit`）は入口ごと止める（マウス側でも ✎ アイコン・ダブルクリック・
+ *   別名エリアクリックを無効化しており、キーボードだけ入れると挙動が食い違う）。
+ * - `delete`/`panel` は**選択件数 > 0 のときのみ**有効にする。選択モードは「これから選ぶ」状態であり、
+ *   0件のときにフォーカス行へ破壊的操作が飛ぶと、選ぶつもりだった行が消える/移動する事故になる。
  */
 const isShortcutEnabled = (intent: ShortcutIntent, ctx: ShortcutContext): boolean => {
   // 自前の文字入力 UI を持つモードでは一切横取りしない（既存の規律を全ショートカットへ一括適用する）。
@@ -319,19 +330,26 @@ const isShortcutEnabled = (intent: ShortcutIntent, ctx: ShortcutContext): boolea
     return false;
   }
   switch (intent) {
-    // 行に紐づく操作。
+    // 行に紐づく操作。選択モード中は行の編集導線を止める（マウス側の無効化と揃える）。
     case 'inline-edit':
     case 'alias-edit':
-      return hasFocusedRow(ctx);
+      return !ctx.selectionMode && hasFocusedRow(ctx);
     // 対象が選択状態で変わる操作。選択あり＝一括（左ペインでも可）/ 選択なし＝単一（LIST のみ）。
+    // ただし選択モード中の0件は「対象なし」であり、フォーカス行へ倒さない。
     case 'panel':
-      return ctx.selectionCount > 0 ? ctx.resultCount > 0 : hasFocusedRow(ctx);
+      if (ctx.selectionCount > 0) {
+        return ctx.resultCount > 0;
+      }
+      return !ctx.selectionMode && hasFocusedRow(ctx);
     case 'delete':
       // 検索ボックスでは常にネイティブの前方削除を優先する（選択の有無を問わない）。
       if (isCaretInSearch(ctx)) {
         return false;
       }
-      return ctx.selectionCount > 0 ? ctx.resultCount > 0 : hasFocusedRow(ctx);
+      if (ctx.selectionCount > 0) {
+        return ctx.resultCount > 0;
+      }
+      return !ctx.selectionMode && hasFocusedRow(ctx);
     // 行に紐づかない操作。
     case 'select-all':
       // 検索ボックスのネイティブなテキスト全選択を奪わない。それ以外は左ペインでも有効。

@@ -63,6 +63,14 @@
   "popupSearchLabel": {
     "message": "Search bookmarks"
   },
+  "popupSelectionModeEnter": {
+    "description": "Tooltip of the header toggle button while NOT in selection mode",
+    "message": "Switch to selection mode (click items to select)"
+  },
+  "popupSelectionModeExit": {
+    "description": "Tooltip of the header toggle button while in selection mode",
+    "message": "Exit selection mode (click items to open)"
+  },
   "popupAddCurrentTitle": {
     "message": "Add the current page (Ctrl/Cmd+D)"
   },

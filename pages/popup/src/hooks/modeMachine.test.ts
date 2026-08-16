@@ -306,12 +306,13 @@ describe('resolveShortcutIntent', () => {
 });
 
 describe('isShortcutEnabled', () => {
-  /** 判定文脈のビルダー。既定は「LIST + 右ペイン / 選択なし / 結果20件」（最も一般的な操作状態）。 */
+  /** 判定文脈のビルダー。既定は「LIST + 右ペイン / 通常モード / 選択なし / 結果20件」（最も一般的な操作状態）。 */
   const ctx = (over: Partial<ShortcutContext> = {}): ShortcutContext => ({
     mode: 'LIST',
     listFocus: 'result',
     selectionCount: 0,
     resultCount: 20,
+    selectionMode: false,
     ...over,
   });
 
@@ -426,6 +427,49 @@ describe('isShortcutEnabled', () => {
     it('結果0件では無効', () => {
       expect(isShortcutEnabled('inline-edit', ctx({ resultCount: 0 }))).toBe(false);
       expect(isShortcutEnabled('alias-edit', ctx({ resultCount: 0 }))).toBe(false);
+    });
+  });
+
+  describe('選択モード中の切り替え（selection-mode AC-9）', () => {
+    /** 選択モード + 選択0件（モードに入った直後・全解除した直後）。 */
+    const emptyMode = (over: Partial<ShortcutContext> = {}) => ctx({ selectionMode: true, ...over });
+    /** 選択モード + 選択あり（一括操作の対象がある状態）。 */
+    const withSelection = (over: Partial<ShortcutContext> = {}) =>
+      ctx({ selectionMode: true, selectionCount: 3, ...over });
+
+    it('行の編集導線（inline-edit / alias-edit）は選択件数によらず無効', () => {
+      expect(isShortcutEnabled('inline-edit', emptyMode())).toBe(false);
+      expect(isShortcutEnabled('alias-edit', emptyMode())).toBe(false);
+      expect(isShortcutEnabled('inline-edit', withSelection())).toBe(false);
+      expect(isShortcutEnabled('alias-edit', withSelection())).toBe(false);
+    });
+
+    it('選択0件の delete / panel は無効（選ぶつもりのフォーカス行へ破壊的操作を飛ばさない）', () => {
+      expect(isShortcutEnabled('delete', emptyMode())).toBe(false);
+      expect(isShortcutEnabled('panel', emptyMode())).toBe(false);
+      expect(isShortcutEnabled('delete', emptyMode({ listFocus: 'search' }))).toBe(false);
+      expect(isShortcutEnabled('panel', emptyMode({ listFocus: 'search' }))).toBe(false);
+    });
+
+    it('選択ありの delete / panel は一括操作として有効（左ペインでも可）', () => {
+      expect(isShortcutEnabled('delete', withSelection())).toBe(true);
+      expect(isShortcutEnabled('panel', withSelection())).toBe(true);
+      expect(isShortcutEnabled('delete', withSelection({ mode: 'FOLDER_TREE' }))).toBe(true);
+      expect(isShortcutEnabled('panel', withSelection({ mode: 'FOLDER_TREE' }))).toBe(true);
+    });
+
+    it('select-all / undo / add-current は選択モードでも従来どおり', () => {
+      expect(isShortcutEnabled('select-all', emptyMode())).toBe(true);
+      expect(isShortcutEnabled('select-all', emptyMode({ listFocus: 'search' }))).toBe(false);
+      expect(isShortcutEnabled('undo', emptyMode())).toBe(true);
+      expect(isShortcutEnabled('add-current', emptyMode())).toBe(true);
+    });
+
+    it('通常モードの判定は一切変わらない（退行防止）', () => {
+      expect(isShortcutEnabled('inline-edit', ctx())).toBe(true);
+      expect(isShortcutEnabled('alias-edit', ctx())).toBe(true);
+      expect(isShortcutEnabled('delete', ctx())).toBe(true);
+      expect(isShortcutEnabled('panel', ctx())).toBe(true);
     });
   });
 

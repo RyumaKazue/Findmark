@@ -63,6 +63,14 @@
   "popupSearchLabel": {
     "message": "ブックマークを検索"
   },
+  "popupSelectionModeEnter": {
+    "description": "Tooltip of the header toggle button while NOT in selection mode",
+    "message": "選択モードに切り替え（アイテムを押して選ぶ）"
+  },
+  "popupSelectionModeExit": {
+    "description": "Tooltip of the header toggle button while in selection mode",
+    "message": "選択モードを終了（アイテムを押すと開く）"
+  },
   "popupAddCurrentTitle": {
     "message": "現在のページを追加（Ctrl/Cmd+D）"
   },

@@ -1,5 +1,6 @@
 import { formatPath } from './folderTreeModel.js';
 import { useI18n } from '@extension/i18n';
+import { cn } from '@extension/ui';
 import type { RefObject } from 'react';
 
 interface SearchHeaderProps {
@@ -14,17 +15,33 @@ interface SearchHeaderProps {
   scopePath?: string[] | null;
   /** 「＋追加」クリックで現在ページを登録する（U14）。 */
   onAddCurrent?: () => void;
+  /** 選択モード中か（`selection-mode`）。トグルボタンの ON/OFF 表示に使う。 */
+  selectionMode?: boolean;
+  /** 「☑ 選択」トグル。ON→OFF では選択もクリアされる（`useSelection.toggleSelectionMode`）。 */
+  onToggleSelectionMode?: () => void;
 }
 
 /**
- * 固定ヘッダー（56px）。検索ボックス（h34・虫眼鏡・フォーカスリング）と「＋追加」ボタン。
- * 「＋追加」は U7 ではプレースホルダ（現在ページ登録は U14）。
+ * 固定ヘッダー（56px）。検索ボックス（h34・虫眼鏡・フォーカスリング）と「☑ 選択」「＋追加」ボタン。
  *
  * U11: スコープ中は検索ボックス先頭に表示専用のフォルダチップ（`📁` + 圧縮パス）を出す。起動時の自動フォーカスは
  * 廃止し（既定フォーカスは左ペイン = FOLDER_TREE）、フォーカス制御は Popup が一元管理する。
  * キー割り当て（↑↓/Enter/Escape）は U8 のモード状態機械（Popup の document リスナー）に集約している。
+ *
+ * `selection-mode`: 「☑ 選択」トグルが複数選択の入口になる（従来は行ホバーで現れるチェックボックスが唯一の
+ * マウス導線で、その周囲を押すとサイトが開いてしまっていた）。1件以上選択すると Popup がヘッダーごと
+ * `BulkActionBar` へ差し替えるため、本コンポーネントが描画されるのは「選択0件」の間だけになる
+ * （＝選択モード中でも検索ボックスは使える）。
  */
-export const SearchHeader = ({ query, onQueryChange, inputRef, scopePath = null, onAddCurrent }: SearchHeaderProps) => {
+export const SearchHeader = ({
+  query,
+  onQueryChange,
+  inputRef,
+  scopePath = null,
+  onAddCurrent,
+  selectionMode = false,
+  onToggleSelectionMode,
+}: SearchHeaderProps) => {
   const { t } = useI18n();
 
   return (
@@ -52,6 +69,20 @@ export const SearchHeader = ({ query, onQueryChange, inputRef, scopePath = null,
           className="text-ink placeholder:text-ink-faint h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
         />
       </div>
+      {/* 選択モードの切替（`selection-mode`）。ON は accent 塗りで「いま行を押すと選ぶ」ことを示す。
+          押下対象を行全体に広げる方式の入口であり、行内にはチェックボックス等の押下対象を置かない。 */}
+      <button
+        type="button"
+        aria-pressed={selectionMode}
+        title={selectionMode ? t('popupSelectionModeExit') : t('popupSelectionModeEnter')}
+        onClick={onToggleSelectionMode}
+        className={cn(
+          'flex h-[34px] flex-none items-center gap-1.5 rounded-md px-3 text-[12.5px] font-bold',
+          selectionMode ? 'bg-accent text-white' : 'border-line-input text-ink-soft border bg-white',
+        )}>
+        <span aria-hidden="true">☑</span>
+        {t('commonSelect')}
+      </button>
       <button
         type="button"
         title={t('popupAddCurrentTitle')}

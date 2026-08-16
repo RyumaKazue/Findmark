@@ -7,13 +7,17 @@ interface BulkActionBarProps {
   onMove: () => void;
   /** [削除] ボタン（一括削除・1アンドゥ単位）。 */
   onDelete: () => void;
-  /** [選択解除] ボタン。 */
+  /**
+   * [選択解除] ボタン。`selection-mode` 以降、Popup は `exitSelectionMode` を渡す＝**選択解除と同時に
+   * 選択モードも終了**し、行クリックが「開く」に戻る（終了導線をトグルボタン・Escape とここの3つに揃える）。
+   */
   onClear: () => void;
 }
 
 /**
  * 一括操作バー（U13・デザイン状態1f）。1件以上選択中は `SearchHeader` の代わりにこれを描画する
  * （Popup 側で `selection.count > 0` により差し替える。同じ56px枠を占有する）。
+ * 選択モード中でも**選択0件の間は `SearchHeader` のまま**であり、検索し直して選び直せる（`selection-mode`）。
  *
  * docs/design/README.md「1f — 複数選択中（一括操作バー）」の視覚仕様に準拠:
  * bg `accent-bg` + 下ボーダー、左に「N件選択中」、右に [移動](accent塗り) / [削除](危険色枠) / [選択解除](テキスト)。

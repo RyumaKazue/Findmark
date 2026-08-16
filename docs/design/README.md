@@ -87,6 +87,8 @@ Chrome拡張の popup は最大 800×600 なので 760×560 は収まる。`html
   - 削除 = 白地 `1px solid #E1C4C4` / `#C0392B`
   - 選択解除 = 枠なしテキスト `#5A6480`
 - **行**: ファビコン位置が **16×16 チェックボックス**（radius 4）に置換。選択済み = accent 塗り + 白 `✓`、行背景 `#F4F6FE`、チップ bg は `#E4E9FB`。未選択 = `1.5px solid #C7CBD4` の白枠。**未選択行もチェックボックスを表示**する。
+- **表示条件（`selection-mode` で改訂）**: チェックボックスは**選択モード中のみ**表示する（旧仕様の「行ホバーで段階的に出す」は廃止。ホバーでは何も出さない）。またチェックボックスは**表示専用**であり、押下対象は**行全体**（選択モード中は行のどこを押しても選択がトグルする）。選択モード中は行の ✎/🗑 アイコンと「＋別名」チップを描画しない（押下対象を行1つに保つ）。
+- **ヘッダーの差し替え条件**: 一括操作バーが出るのは**1件以上選択中**のときだけ。選択モードに入っただけ（0件）ではヘッダーは検索ボックス（1a）のままで、「☑ 選択」トグルが ON 表示になる＝**選択モード中も検索して選び直せる**。
 
 ### 1g — ドラッグ&ドロップ中（オプション）
 - **Purpose**: 行を左ペインのフォルダへ移動。
@@ -152,8 +154,11 @@ padding: 0 16px; border-bottom: 1px solid #EFF1F4;
 | `Home`（左ペイン） | スコープを「すべて」へ一発で戻す |
 | 印字文字 / 修飾なし `Backspace`（左/右ペイン） | 検索ボックスへフォーカスが復帰する |
 | `⌘/Ctrl + S` または保存ボタン | 変更を確定 |
-| 行のチェックボックス / `⌘/Ctrl + クリック` | 複数選択。1件以上でヘッダーが一括操作バー（1f）に切替 |
-| `Shift + クリック` | 範囲選択 |
+| ヘッダーの「☑ 選択」トグル | **選択モード**の開始/終了。※`selection-mode` で追加。旧仕様の「行ホバーで現れるチェックボックスを押す」は廃止（周囲を押すとサイトが開く誤操作の原因だったため） |
+| 行クリック（選択モード中） | 選択のトグル（**開かない**）。1件以上でヘッダーが一括操作バー（1f）に切替 |
+| `⌘/Ctrl + クリック` | 複数選択。通常モードから押した場合は選択と同時に選択モードへ入る |
+| `Shift + クリック` | 範囲選択（通常モードからでも選択モードへ入る） |
+| `Esc`（選択モード中） | 選択モードを終了（選択もクリア）。段階戻りの最前段 |
 | 一括「移動」 | フォルダ選択メニュー → 移動。左ペインへのドラッグでも同じ |
 | 一括「削除」 | 確認後に削除、「元に戻す」トーストを 5 秒表示 |
 | ドラッグ開始（8px 移動で発火） | ゴースト表示（1g）。ドロップ先候補は破線ハイライト。複数選択中は件数バッジ |
@@ -249,12 +254,12 @@ type UiState = {
 | コンポーネント | 責務 | 主な props |
 |---|---|---|
 | `PopupShell` | 760×560 の外枠・角丸・影・3領域レイアウト | `children` |
-| `SearchHeader` | 検索ボックス、フォルダチップ（スコープの可視化）、「＋ 追加」 | `query`, `scopeFolderId`, `focusArea`, `onQueryChange`, `onAdd` |
+| `SearchHeader` | 検索ボックス、フォルダチップ（スコープの可視化）、「☑ 選択」トグル、「＋ 追加」 | `query`, `scopeFolderId`, `focusArea`, `selectionMode`, `onQueryChange`, `onToggleSelectionMode`, `onAdd` |
 | `BulkActionBar` | 一括操作バー（1f） | `count`, `onMove`, `onDelete`, `onClear` |
 | `FolderTree` | 再帰ツリー、開閉、選択、ドロップ先ハイライト、深さ省略 | `folders`, `expandedIds`, `selectedId`, `dropTargetId`, `onToggle`, `onSelect` |
 | `FolderTreeItem` | 1行（三角 / アイコン / 名前 / 件数）+ 子の再帰描画 | `folder`, `depth`, `state` |
 | `ResultList` | 仮想スクロール、キーボードナビ、空状態 | `results`, `focusedIndex`, `selectedIds` |
-| `ResultRow` | 56px 2段組、チップ、チェックボックス、dimmed | `bookmark`, `matchedAliases`, `variant: 'default' \| 'selected' \| 'dimmed' \| 'match'` |
+| `ResultRow` | 56px 2段組、チップ、チェックボックス（選択モード中のみ・表示専用）、dimmed | `bookmark`, `matchedAliases`, `selectionMode`, `checked`, `variant: 'default' \| 'selected' \| 'dimmed' \| 'match'` |
 | `RowEditor` | 1d の展開編集フォーム | `draft`, `onChange`, `onSave`, `onCancel` |
 | `AliasChipInput` | 1e のチップ入力 | `aliases`, `input`, `onAdd`, `onRemove` |
 | `AliasChip` | pill 1個（通常 / マッチ / 削除可 / 部分一致マーカー） | `label`, `matched`, `matchRange`, `onRemove` |

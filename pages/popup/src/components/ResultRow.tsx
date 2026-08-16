@@ -44,9 +44,13 @@ interface ResultRowProps {
   onDragStart?: (e: MouseEvent) => void;
   /** この行が選択中（チェック済み）か（U13）。 */
   checked?: boolean;
-  /** 1件以上選択中で、全行が常時チェックボックス表示になっているか（U13）。 */
-  selectionActive?: boolean;
-  /** チェックボックスクリック・Ctrl/Cmd+クリックで選択をトグルする（開かない・U13）。 */
+  /**
+   * 選択モード中か（`selection-mode`）。true の間は行のクリックが「開く」ではなく「選ぶ」になり、
+   * ファビコン位置に表示専用のチェックボックスが出る。行内の編集導線（✎/🗑・別名エリア・ダブルクリック）は
+   * すべて無効化し、押下対象を「行」1つに単純化する。
+   */
+  selectionMode?: boolean;
+  /** 行クリック（選択モード中）・Ctrl/Cmd+クリック（通常モード）で選択をトグルする（開かない）。 */
   onToggleSelect?: () => void;
   /** Shift+クリックで anchor からの範囲選択を行う（開かない・U13）。 */
   onRangeSelect?: () => void;
@@ -92,7 +96,7 @@ export const ResultRow = ({
   onDelete,
   onDragStart,
   checked = false,
-  selectionActive = false,
+  selectionMode = false,
   onToggleSelect,
   onRangeSelect,
 }: ResultRowProps) => {
@@ -139,12 +143,25 @@ export const ResultRow = ({
     );
   }
 
-  // 行クリックは既定で「開く」。別名チップ領域（data-alias-area）は別名編集、編集/削除アイコン
-  // （data-row-action）はそれぞれの操作に分岐する。ネストした interactive 要素（button in button）を
-  // 避けるため、単一の button 上でクリック対象により分岐する（既存の別名エリア分岐と同じ規律）。
-  // U13: チェックボックス領域（data-checkbox-area）は修飾キーの有無に関わらずトグル、行本体への
-  // Ctrl/Cmd+クリック・Shift+クリックはそれぞれ個別トグル・範囲選択にし、開かない（選択操作を優先する）。
+  // 行クリックの解釈（`selection-mode`）。
+  //
+  // **選択モード中は行のどこを押しても「選ぶ」**（最優先の早期分岐）。行内に「開く/選ぶ」の境界を作らないため、
+  // 数 px のずれで意図と違う結果になることが構造的に起きない。これが本単位の中心的な変更であり、従来の
+  // 「ホバーで現れる 16×16 のチェックボックスだけが選択導線」という設計（周囲を押すとサイトが開いていた）を置き換える。
+  //
+  // 通常モードの分岐は従来どおり: 編集/削除アイコン（data-row-action）→ 各操作、別名チップ領域
+  // （data-alias-area）→ 別名編集、Ctrl/Cmd+クリック・Shift+クリック → 選択（`selectionModel` 側で選択モードへ
+  // 自動遷移する）、それ以外 → 開く。ネストした interactive 要素（button in button）を避けるため、
+  // 単一の button 上でクリック対象により分岐する規律は維持する。
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (selectionMode) {
+      if (e.shiftKey) {
+        onRangeSelect?.();
+      } else {
+        onToggleSelect?.();
+      }
+      return;
+    }
     const target = e.target as HTMLElement;
     if (onDelete && target.closest('[data-row-action="delete"]')) {
       onDelete();
@@ -152,10 +169,6 @@ export const ResultRow = ({
     }
     if (onEnterInlineEdit && target.closest('[data-row-action="edit"]')) {
       onEnterInlineEdit();
-      return;
-    }
-    if (target.closest('[data-checkbox-area]')) {
-      onToggleSelect?.();
       return;
     }
     if (e.shiftKey) {
@@ -173,11 +186,12 @@ export const ResultRow = ({
     onOpen();
   };
 
-  // ドラッグ開始は行本体のみ。編集/削除アイコン・別名エリア・チェックボックス領域上の mousedown は
-  // 既存のクリック分岐を優先する（それらの領域での微小なブレでドラッグが誤発火しないようにする・U13）。
+  // ドラッグ開始は行本体のみ。編集/削除アイコン・別名エリア上の mousedown は既存のクリック分岐を優先する
+  // （それらの領域での微小なブレでドラッグが誤発火しないようにする）。選択モード中はこれらの領域自体を
+  // 描画しない（別名チップは表示のみ）ため、実質「行全体がドラッグ開始点」になる。
   const handleMouseDown = (e: MouseEvent<HTMLButtonElement>) => {
     const target = e.target as HTMLElement;
-    if (target.closest('[data-row-action], [data-alias-area], [data-checkbox-area]')) {
+    if (!selectionMode && target.closest('[data-row-action], [data-alias-area]')) {
       return;
     }
     onDragStart?.(e);
@@ -186,8 +200,13 @@ export const ResultRow = ({
   return (
     <button
       type="button"
+      // 選択モード中の行はトグルボタンとして振る舞うため、選択状態を支援技術へ伝える
+      // （チェックボックス自体は装飾＝aria-hidden の表示専用要素）。通常モードでは押下＝遷移のため付けない。
+      aria-pressed={selectionMode ? checked : undefined}
       onClick={handleClick}
-      onDoubleClick={onEnterInlineEdit}
+      // 選択モード中はダブルクリックでインライン編集に入らない（1回目のクリックは選択のトグルであり、
+      // 2回目で編集が開くと「選んだつもりが編集画面」になる）。
+      onDoubleClick={selectionMode ? undefined : onEnterInlineEdit}
       // ホバー選択は `onMouseEnter` ではなく `onMouseMove` に結線する。`↑↓` で選択が可視範囲の端に達すると
       // `ResultList` の追従 effect が `scrollTop` をずらすが、Chrome はマウスを動かしていなくても
       // 「スクロールでカーソル下の要素が変わった」時点で `mouseenter` を発火する（仮想スクロールは行を
@@ -212,45 +231,43 @@ export const ResultRow = ({
       )}>
       {/* 1段目 */}
       <span className="flex items-center gap-[10px]">
-        {/* チェックボックスの段階表示（U13・デザイン1f）: 通常=ファビコンのみ / ホバー=行ホバーでチェックボックスに
-            変化（Gmail/Finder挙動。group-hover は行全体の group を参照）/ 1件以上選択中=全行常時表示。
-            同寸オーバーレイで切替時にレイアウトが動かないようにし、非表示時は pointer-events-none で
-            チェックボックスが下のファビコンへのクリック（＝開く）を奪わないようにする。 */}
-        <span className="relative flex size-4 flex-none items-center justify-center">
-          {!(checked || selectionActive) && (
-            <span className="group-hover:opacity-0">
-              <Favicon url={item.node.url ?? ''} />
+        {/* ファビコン / チェックボックス（`selection-mode`・デザイン1f）: 通常モードは常にファビコン、
+            選択モード中は全行がチェックボックスになる（ホバーでの段階表示は誤操作の原因だったため廃止した）。
+            チェックボックスは**表示専用**（pointer-events-none）で、押下は行全体が受ける。
+            枠は同寸（16px）に固定し、切替でレイアウトが動かないようにする。 */}
+        <span className="flex size-4 flex-none items-center justify-center">
+          {selectionMode ? (
+            <span
+              aria-hidden="true"
+              className={cn(
+                'pointer-events-none flex size-4 items-center justify-center rounded text-[10px] font-bold leading-none text-white',
+                checked ? 'bg-accent' : 'border-line-dashed border-[1.5px] bg-white',
+              )}>
+              {checked && '✓'}
             </span>
+          ) : (
+            <Favicon url={item.node.url ?? ''} />
           )}
-          <span
-            data-checkbox-area="true"
-            title={checked ? t('commonDeselect') : t('commonSelect')}
-            className={cn(
-              'absolute inset-0 flex items-center justify-center rounded text-[10px] font-bold leading-none text-white transition-opacity',
-              checked ? 'bg-accent' : 'border-line-dashed border-[1.5px] bg-white',
-              checked || selectionActive
-                ? 'pointer-events-auto opacity-100'
-                : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
-            )}>
-            {checked && '✓'}
-          </span>
         </span>
         <span className="text-ink flex-1 truncate text-[13.5px] font-medium">{item.node.title}</span>
-        {/* ホバー時に右端へフェードインする編集/削除アイコン（docs/design「hover: 右端に編集/削除アイコン」）。 */}
-        <span className="flex flex-none items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <span
-            data-row-action="edit"
-            title={t('popupRowEdit')}
-            className="text-ink-faint hover:text-accent flex h-6 w-6 items-center justify-center rounded">
-            ✎
+        {/* ホバー時に右端へフェードインする編集/削除アイコン（docs/design「hover: 右端に編集/削除アイコン」）。
+            選択モード中は描画しない（行の押下対象を1つに保ち、選ぶつもりの操作で編集/削除に入らないようにする）。 */}
+        {!selectionMode && (
+          <span className="flex flex-none items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <span
+              data-row-action="edit"
+              title={t('popupRowEdit')}
+              className="text-ink-faint hover:text-accent flex h-6 w-6 items-center justify-center rounded">
+              ✎
+            </span>
+            <span
+              data-row-action="delete"
+              title={t('popupRowDelete')}
+              className="text-ink-faint hover:text-danger flex h-6 w-6 items-center justify-center rounded">
+              🗑
+            </span>
           </span>
-          <span
-            data-row-action="delete"
-            title={t('popupRowDelete')}
-            className="text-ink-faint hover:text-danger flex h-6 w-6 items-center justify-center rounded">
-            🗑
-          </span>
-        </span>
+        )}
       </span>
 
       {/* 2段目 */}
@@ -258,8 +275,12 @@ export const ResultRow = ({
         {item.folderPath.length > 0 && (
           <span className="text-ink-soft flex-none truncate text-[11.5px]">{item.folderPath.join(' / ')}</span>
         )}
-        {/* 別名チップ領域: この範囲のクリックは別名編集に入る（handleClick が data 属性で判定）。 */}
-        <span data-alias-area="true" title={t('popupRowAliasEdit')} className="flex items-center gap-2">
+        {/* 別名チップ領域: この範囲のクリックは別名編集に入る（handleClick が data 属性で判定）。
+            選択モード中は編集導線ではなく単なる表示にする（data 属性・ツールチップを付けない）。 */}
+        <span
+          data-alias-area={selectionMode ? undefined : 'true'}
+          title={selectionMode ? undefined : t('popupRowAliasEdit')}
+          className="flex items-center gap-2">
           {shown.map((alias, i) => {
             const isMatched = matched.includes(alias);
             return (
@@ -282,8 +303,9 @@ export const ResultRow = ({
               +{extra}
             </span>
           )}
-          {/* 別名が無い行でも編集導線を出す（別名を付けて探しやすくする）。 */}
-          {ordered.length === 0 && (
+          {/* 別名が無い行でも編集導線を出す（別名を付けて探しやすくする）。選択モード中は押しても
+              編集に入らないため出さない（押せそうに見えるものを残さない）。 */}
+          {ordered.length === 0 && !selectionMode && (
             <span className="text-ink-faint border-line-dashed rounded-full border border-dashed px-2 py-[2px] text-[11px]">
               {t('popupRowAddAlias')}
             </span>
