@@ -1,13 +1,13 @@
 import { useI18n } from '@extension/i18n';
 import { cn } from '@extension/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
 
 /**
  * Popup の document リスナーから呼ばれるメニュー操作（`panel:*` インテントの実行体）。
  * `MovePanel`/`FolderTree` と同じ命令ハンドル方式（キー処理は document レベルで一元化する）。
  */
-interface FolderContextMenuActions {
+interface ContextMenuActions {
   /** `panel:candidate-up`。項目を1つ上へ。 */
   selectPrev: () => void;
   /** `panel:candidate-down`。項目を1つ下へ。 */
@@ -18,8 +18,8 @@ interface FolderContextMenuActions {
   close: () => void;
 }
 
-/** メニュー項目1件。将来のフォルダ操作（リネーム・新規作成）を足せるよう配列駆動にしている。 */
-interface FolderMenuItem {
+/** メニュー項目1件。項目を足せるよう配列駆動にしている（フォルダ操作・行操作の双方で使う）。 */
+interface MenuItem {
   /** 実行時に `onSelect` へ渡す識別子。 */
   key: string;
   /** 表示ラベル（呼び出し側が翻訳済みの文字列を渡す）。 */
@@ -30,19 +30,24 @@ interface FolderMenuItem {
   disabled?: boolean;
   /** 無効な理由（ツールチップ）。 */
   disabledHint?: string;
+  /**
+   * この項目の**上に区切り線**を描くか（`row-context-menu`）。
+   * 破壊的な「削除」を他の項目から視覚的に離し、勢いで押してしまうのを減らす。
+   */
+  separatorBefore?: boolean;
 }
 
-interface FolderContextMenuProps {
+interface ContextMenuProps {
   /** 右クリック位置（ビューポート座標）。 */
   x: number;
   y: number;
-  items: FolderMenuItem[];
+  items: MenuItem[];
   /** 項目の実行。 */
   onSelect: (key: string) => void;
   /** メニューを閉じる（Escape / 背景クリック）。 */
   onClose: () => void;
   /** キーボードインテントを受け取るための命令ハンドル。 */
-  actionsRef: RefObject<FolderContextMenuActions | null>;
+  actionsRef: RefObject<ContextMenuActions | null>;
 }
 
 /**
@@ -60,14 +65,20 @@ const POPUP_HEIGHT = 560;
 /** メニューの寸法（配置計算用の見積り。実寸は内容に依るが、はみ出し防止には上限で足りる）。 */
 const MENU_WIDTH = 200;
 const ITEM_HEIGHT = 32;
+const SEPARATOR_HEIGHT = 9;
 const MENU_PADDING = 8;
 
 /**
  * 右クリック位置がポップアップ外へはみ出さないよう座標を丸める（純粋・本コンポーネント専用）。
- * 右端・下端では位置をずらして全体が見えるようにする。
+ * 右端・下端では位置をずらして全体が見えるようにする。区切り線の分も高さに数える。
  */
-const clampPosition = (x: number, y: number, itemCount: number): { left: number; top: number } => {
-  const height = itemCount * ITEM_HEIGHT + MENU_PADDING;
+const clampPosition = (
+  x: number,
+  y: number,
+  itemCount: number,
+  separatorCount: number,
+): { left: number; top: number } => {
+  const height = itemCount * ITEM_HEIGHT + separatorCount * SEPARATOR_HEIGHT + MENU_PADDING;
   return {
     left: Math.max(0, Math.min(x, POPUP_WIDTH - MENU_WIDTH)),
     top: Math.max(0, Math.min(y, POPUP_HEIGHT - height)),
@@ -75,19 +86,22 @@ const clampPosition = (x: number, y: number, itemCount: number): { left: number;
 };
 
 /**
- * フォルダ行の右クリックメニュー（`folder-delete`・PANEL モード）。
+ * 右クリックメニュー（`folder-delete` で導入し `row-context-menu` で汎用化・PANEL モード）。
+ *
+ * 左ペインのフォルダ行と右ペインのブックマーク行の**両方**が使う。本コンポーネントは対象の種類を知らず、
+ * 項目配列・座標・命令ハンドルだけを受け取る（何を並べるかは呼び出し側の関心事）。
  *
  * `MovePanel` と同じ構成（背景オーバーレイ + 命令ハンドル）にし、キー操作（`↑↓`/`Enter`/`Escape`）は
  * Popup の document リスナーが `PANEL` インテントとして解決して `actionsRef` 経由で実行する。
- * これにより、DOM フォーカスが左ペインのツリールートにあってもキー操作が一貫して効く。
+ * これにより、DOM フォーカスが左ペインのツリールートや背景の結果行にあってもキー操作が一貫して効く。
  *
  * 無効項目（最上位フォルダの削除など）はフォーカスできるが実行されない。理由を `title` で示し、
  * 「押せるのに何も起きない」ではなく「押せない理由が分かる」状態にする。
  */
-export const FolderContextMenu = ({ x, y, items, onSelect, onClose, actionsRef }: FolderContextMenuProps) => {
+export const ContextMenu = ({ x, y, items, onSelect, onClose, actionsRef }: ContextMenuProps) => {
   const { t } = useI18n();
   const [index, setIndex] = useState(NO_FOCUS);
-  const { left, top } = clampPosition(x, y, items.length);
+  const { left, top } = clampPosition(x, y, items.length, items.filter(item => item.separatorBefore).length);
 
   const selectAt = useCallback(
     (i: number) => {
@@ -122,8 +136,8 @@ export const FolderContextMenu = ({ x, y, items, onSelect, onClose, actionsRef }
 
   return (
     <div className="absolute inset-0 z-30">
-      {/* 背景オーバーレイ（クリックで閉じる）。メニューは暗幕を張らない（対象フォルダを見えたままにする）。
-          **右クリックでも閉じる**: メニューを開いたまま別のフォルダを右クリックしたときに、まずこのメニューが
+      {/* 背景オーバーレイ（クリックで閉じる）。メニューは暗幕を張らない（対象の行/フォルダを見えたままにする）。
+          **右クリックでも閉じる**: メニューを開いたまま別の対象を右クリックしたときに、まずこのメニューが
           閉じ、続く右クリックで新しい対象のメニューを開ける（既定メニューは Popup 側で抑止済み）。 */}
       <button
         type="button"
@@ -146,32 +160,35 @@ export const FolderContextMenu = ({ x, y, items, onSelect, onClose, actionsRef }
         style={{ left, top, width: MENU_WIDTH }}
         className="shadow-shell border-line absolute flex flex-col rounded-lg border bg-white py-1">
         {items.map((item, i) => (
-          <button
-            key={item.key}
-            type="button"
-            role="menuitem"
-            aria-disabled={item.disabled}
-            title={item.disabled ? item.disabledHint : undefined}
-            tabIndex={-1}
-            onMouseDown={e => e.preventDefault()}
-            onMouseMove={() => setIndex(i)}
-            onClick={() => selectAt(i)}
-            className={cn(
-              'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px]',
-              item.disabled
-                ? 'text-ink-faint cursor-not-allowed'
-                : cn(
-                    'cursor-pointer',
-                    item.danger ? 'text-danger' : 'text-ink',
-                    i === index && (item.danger ? 'bg-danger/10' : 'bg-accent-bg'),
-                  ),
-            )}>
-            {item.label}
-          </button>
+          <Fragment key={item.key}>
+            {/* 区切り線（`row-context-menu`）。破壊的な項目を他から視覚的に離す。 */}
+            {item.separatorBefore && <div role="separator" className="border-line my-1 border-t" />}
+            <button
+              type="button"
+              role="menuitem"
+              aria-disabled={item.disabled}
+              title={item.disabled ? item.disabledHint : undefined}
+              tabIndex={-1}
+              onMouseDown={e => e.preventDefault()}
+              onMouseMove={() => setIndex(i)}
+              onClick={() => selectAt(i)}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px]',
+                item.disabled
+                  ? 'text-ink-faint cursor-not-allowed'
+                  : cn(
+                      'cursor-pointer',
+                      item.danger ? 'text-danger' : 'text-ink',
+                      i === index && (item.danger ? 'bg-danger/10' : 'bg-accent-bg'),
+                    ),
+              )}>
+              {item.label}
+            </button>
+          </Fragment>
         ))}
       </div>
     </div>
   );
 };
 
-export type { FolderContextMenuActions, FolderMenuItem };
+export type { ContextMenuActions, MenuItem };

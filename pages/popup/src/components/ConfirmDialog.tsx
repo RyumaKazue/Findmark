@@ -5,7 +5,7 @@ import type { RefObject } from 'react';
 
 /**
  * Popup の document リスナーから呼ばれるダイアログ操作（`panel:*` インテントの実行体）。
- * `MovePanel`/`FolderContextMenu` と同じ命令ハンドル方式。
+ * `MovePanel`/`ContextMenu` と同じ命令ハンドル方式。
  */
 interface ConfirmDialogActions {
   /** `panel:candidate-up` / `←`。フォーカスを1つ前のボタンへ。 */

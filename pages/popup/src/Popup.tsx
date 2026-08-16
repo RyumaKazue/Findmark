@@ -5,8 +5,8 @@ import { ErrorDisplay, cn } from '@extension/ui';
 import { AddCurrentPanel } from '@src/components/AddCurrentPanel';
 import { BulkActionBar } from '@src/components/BulkActionBar';
 import { ConfirmDialog } from '@src/components/ConfirmDialog';
+import { ContextMenu } from '@src/components/ContextMenu';
 import { DragGhost } from '@src/components/DragGhost';
-import { FolderContextMenu } from '@src/components/FolderContextMenu';
 import { countContents, resolveScopeAfterDelete } from '@src/components/folderDeleteModel';
 import { FolderTree } from '@src/components/FolderTree';
 import { collectAncestorIds, compressPath, findFolderPath, findParentId } from '@src/components/folderTreeModel';
@@ -14,6 +14,7 @@ import { MovePanel } from '@src/components/MovePanel';
 import { PopupShell } from '@src/components/PopupShell';
 import { ResultList } from '@src/components/ResultList';
 import { buildResultMetaLabel } from '@src/components/resultMetaModel';
+import { buildRowMenuItems, canOpenRowMenu } from '@src/components/rowMenuModel';
 import { SearchHeader } from '@src/components/SearchHeader';
 import { Toast } from '@src/components/Toast';
 import { moveSelectionIndex } from '@src/hooks/listNavigationModel';
@@ -47,35 +48,38 @@ import type { SearchResultItem } from '@extension/shared';
 import type { PopupSession } from '@extension/storage';
 import type { AddCurrentPanelActions } from '@src/components/AddCurrentPanel';
 import type { ConfirmDialogActions } from '@src/components/ConfirmDialog';
-import type { FolderContextMenuActions } from '@src/components/FolderContextMenu';
+import type { ContextMenuActions } from '@src/components/ContextMenu';
 import type { FolderContents } from '@src/components/folderDeleteModel';
 import type { FolderContextTarget, FolderTreeActions } from '@src/components/FolderTree';
 import type { FolderTreeNode } from '@src/components/folderTreeModel';
 import type { CommitPlan } from '@src/components/inlineEditModel';
 import type { MovePanelActions } from '@src/components/MovePanel';
+import type { RowMenuKey } from '@src/components/rowMenuModel';
 import type { FocusArea, ListFocus } from '@src/hooks/modeMachine';
 
 /** セッション保存の debounce（検索の 120ms より長くし、復元の選択解決が保存より先に走るようにする）。 */
 const SESSION_SAVE_DEBOUNCE_MS = 200;
 
 /**
- * 左ペインのフォルダ操作オーバーレイ（`folder-delete`）。右クリックメニューと確認ダイアログを
- * **1つの判別可能ユニオン**で持つ。
+ * 右クリック起点のオーバーレイ（`folder-delete` で導入し `row-context-menu` で行へ拡張）。
+ * フォルダメニュー・削除確認ダイアログ・行メニューを**1つの判別可能ユニオン**で持つ。
  *
  * 既存の PANEL 用途（`bulkMovePanel` / `addCurrentPanelOpen`）は独立した真偽値で共存しており、用途が増えるたび
- * 排他条件（`!bulkMovePanel && !addCurrentPanelOpen && …`）が伸びていく。ここで真偽値を2つ足すと組み合わせが
- * 増えすぎるため、新規分はユニオン1つにまとめ、既存条件に加える項も `folderAction === null` の1つで済ませる。
+ * 排他条件（`!bulkMovePanel && !addCurrentPanelOpen && …`）が伸びていく。ここに真偽値を足していくと組み合わせが
+ * 増えすぎるため、右クリック起点の状態はユニオン1つにまとめ、既存条件に加える項は `contextAction === null` の
+ * 1つで済ませる（variant が増えても排他条件は増えない）。
  */
-type FolderAction =
-  | { kind: 'menu'; folderId: string; title: string; deletable: boolean; x: number; y: number }
+type ContextAction =
+  | { kind: 'folder-menu'; folderId: string; title: string; deletable: boolean; x: number; y: number }
   | {
-      kind: 'confirm';
+      kind: 'folder-confirm';
       folderId: string;
       title: string;
       folderPath: string[];
       /** 配下の内訳。`null` = 件数を取得できなかった（0件と区別する。requirements AC-4 の文言のため）。 */
       contents: FolderContents | null;
-    };
+    }
+  | { kind: 'row-menu'; index: number; x: number; y: number };
 
 /**
  * 検索ポップアップのルート（U7 の3領域シェル + U8 のモード状態機械 + U8a のフォーカス3状態）。
@@ -134,8 +138,8 @@ const Popup = () => {
   const reloadFolders = useCallback(() => folderTreeActionsRef.current?.reload(), []);
   const folderActions = useFolderActions(refresh, undo.register, reloadIndex, reloadFolders);
   // 右クリックメニュー / 確認ダイアログ（PANEL モードを共用する。null = どちらも出ていない）。
-  const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
-  const folderMenuActionsRef = useRef<FolderContextMenuActions | null>(null);
+  const [contextAction, setContextAction] = useState<ContextAction | null>(null);
+  const contextMenuActionsRef = useRef<ContextMenuActions | null>(null);
   const confirmDialogActionsRef = useRef<ConfirmDialogActions | null>(null);
   // ── U13: 複数選択と一括操作 ── 選択はフォーカス（selectedIndex）・モード・スコープと直交する独立状態。
   // `mode` と同様に個々の値へ分解する（オブジェクトそのものを依存配列に含めると毎レンダー新規参照になり
@@ -409,10 +413,10 @@ const Popup = () => {
 
   // フォルダ選択パネル（Ctrl+M）の対象行（単一移動時）。開いた時点の選択行を対象にする（パネル操作中は選択行が動かない）。
   // 一括移動（`bulkMovePanel`）時は対象未確定のまま `selectedItems` を使うため参照しない。
-  // addCurrentPanelOpen（U14）・folderAction（folder-delete）時は MovePanel 用の対象行を持たない
+  // addCurrentPanelOpen（U14）・contextAction（右クリック起点のメニュー/ダイアログ）時は MovePanel 用の対象行を持たない
   // （PANEL モードを共用するため排他にする）。
   const movePanelItem =
-    mode.mode === 'PANEL' && !bulkMovePanel && !addCurrentPanelOpen && folderAction === null
+    mode.mode === 'PANEL' && !bulkMovePanel && !addCurrentPanelOpen && contextAction === null
       ? (results[selectedIndex] ?? null)
       : null;
 
@@ -429,12 +433,12 @@ const Popup = () => {
       mode.mode === 'PANEL' &&
       !bulkMovePanel &&
       !addCurrentPanelOpen &&
-      folderAction === null &&
+      contextAction === null &&
       movePanelItem === null
     ) {
       exitToList();
     }
-  }, [mode.mode, bulkMovePanel, addCurrentPanelOpen, folderAction, movePanelItem, exitToList]);
+  }, [mode.mode, bulkMovePanel, addCurrentPanelOpen, contextAction, movePanelItem, exitToList]);
 
   // 一括移動パネル表示中に選択が空になったら穏当に閉じる（一括削除等との競合を避ける・U13）。
   useEffect(() => {
@@ -529,15 +533,21 @@ const Popup = () => {
     }
   }, [mode.mode, addCurrentPanelOpen, addCurrent, exitToList]);
 
-  // ── folder-delete: フォルダの右クリックメニューと削除 ──
+  // ── 右クリックメニュー（folder-delete: フォルダ / row-context-menu: 結果行） ──
 
   // メニュー/ダイアログを閉じる共通処理。他のパネル（`closeMovePanel` 等）は検索ボックスへ戻すが、
-  // フォルダ操作は**左ペインが操作の起点**のため左ペインへ戻す（続けて別のフォルダを触れる）。
-  const closeFolderAction = useCallback(() => {
-    setFolderAction(null);
+  // 右クリック起点の操作は**その操作を始めたペインへ戻す**（続けて隣の対象を触れるようにする）。
+  // フォルダメニュー/確認ダイアログ → 左ペイン、行メニュー → 右ペイン。
+  const closeContextAction = useCallback(() => {
+    const fromRow = contextAction?.kind === 'row-menu';
+    setContextAction(null);
     exitToList();
-    enterFolderTree();
-  }, [exitToList, enterFolderTree]);
+    if (fromRow) {
+      setListFocus('result');
+    } else {
+      enterFolderTree();
+    }
+  }, [contextAction, exitToList, enterFolderTree]);
 
   // フォルダ行の右クリック。`ENTER_PANEL` は LIST からのみ有効なため、既存2箇所（一括移動・現在ページ登録）と
   // 同じく LIST を経由してから PANEL へ入る。最上位フォルダ（depth 0 = ブックマーク バー等）は Chrome 自身が
@@ -546,8 +556,8 @@ const Popup = () => {
     (target: FolderContextTarget) => {
       exitToList();
       enterPanel();
-      setFolderAction({
-        kind: 'menu',
+      setContextAction({
+        kind: 'folder-menu',
         folderId: target.folderId,
         title: target.title,
         deletable: target.depth > 0,
@@ -568,22 +578,22 @@ const Popup = () => {
         deletedParentId: findParentId(folders, folderId),
         scopeAncestorIds: scopeFolderId === null ? [] : collectAncestorIds(folders, scopeFolderId),
       });
-      closeFolderAction();
+      closeContextAction();
       const ok = await folderActions.deleteFolder({ id: folderId, title, folderPath });
       if (ok) {
         setScopeFolderId(nextScope);
       }
     },
-    [scopeFolderId, folders, closeFolderAction, folderActions],
+    [scopeFolderId, folders, closeContextAction, folderActions],
   );
 
   // メニューの項目実行。「削除」は中身の有無で分岐する（空なら即削除・中身ありは確認ダイアログへ差し替え）。
   const handleFolderMenuSelect = useCallback(
     async (key: string) => {
-      if (key !== 'delete' || folderAction?.kind !== 'menu') {
+      if (key !== 'delete' || contextAction?.kind !== 'folder-menu') {
         return;
       }
-      const { folderId, title } = folderAction;
+      const { folderId, title } = contextAction;
       // 復元先は「削除するフォルダ自身の親までのパス」。`findFolderPath` は対象自身を含めて返すため末尾を落とす。
       const folderPath = findFolderPath(folders, folderId).slice(0, -1);
       let contents: FolderContents;
@@ -593,26 +603,90 @@ const Popup = () => {
         console.error('[Popup] フォルダの中身を数えられませんでした:', e);
         // 件数が取れない場合は「空だから確認不要」と誤判定しないよう、必ず確認ダイアログを出す側へ倒す。
         // `contents: null` で「0件」と区別し、ダイアログには件数不明の文言を出す（0件と偽らない）。
-        setFolderAction({ kind: 'confirm', folderId, title, folderPath, contents: null });
+        setContextAction({ kind: 'folder-confirm', folderId, title, folderPath, contents: null });
         return;
       }
       if (contents.bookmarks === 0 && contents.folders === 0) {
         void runFolderDelete(folderId, title, folderPath);
         return;
       }
-      setFolderAction({ kind: 'confirm', folderId, title, folderPath, contents });
+      setContextAction({ kind: 'folder-confirm', folderId, title, folderPath, contents });
     },
-    [folderAction, folders, runFolderDelete],
+    [contextAction, folders, runFolderDelete],
   );
 
   // 確認ダイアログの [削除する]。
   const handleFolderDeleteConfirm = useCallback(() => {
-    if (folderAction?.kind !== 'confirm') {
+    if (contextAction?.kind !== 'folder-confirm') {
       return;
     }
-    const { folderId, title, folderPath } = folderAction;
+    const { folderId, title, folderPath } = contextAction;
     void runFolderDelete(folderId, title, folderPath);
-  }, [folderAction, runFolderDelete]);
+  }, [contextAction, runFolderDelete]);
+
+  // ── row-context-menu: 結果行の右クリックメニュー ──
+
+  // 行の右クリック。フォルダ側と同じく LIST を経由して PANEL へ入る（`ENTER_PANEL` は LIST からのみ有効）。
+  // **フォーカス行（selectedIndex）は動かさない**。右クリックは「メニューを開くだけ」であり、Escape で
+  // 取りやめたときに ↑↓ の基準が変わっていると驚くため（フォルダ側でスコープを動かさないのと同じ規律）。
+  // 対象行はメニュー項目を実行した時点で確定する。
+  const handleRowContextMenu = useCallback(
+    (index: number, position: { x: number; y: number }) => {
+      if (!canOpenRowMenu({ selectionMode, hasTarget: results[index] !== undefined })) {
+        return;
+      }
+      exitToList();
+      enterPanel();
+      setContextAction({ kind: 'row-menu', index, x: position.x, y: position.y });
+    },
+    [selectionMode, results, exitToList, enterPanel],
+  );
+
+  // 行メニューの項目実行。**すべて既存のハンドラへ委譲する**（メニューは新しい導線であって新しい操作ではない）。
+  // `move` だけは MovePanel の対象が `results[selectedIndex]` で決まるため、フォーカス行を明示的に合わせる
+  // （他のハンドラは内部で `setSelectedIndex` する）。
+  const handleRowMenuSelect = useCallback(
+    (key: string) => {
+      if (contextAction?.kind !== 'row-menu') {
+        return;
+      }
+      const { index } = contextAction;
+      setContextAction(null);
+      switch (key as RowMenuKey) {
+        case 'edit':
+          enterInlineEditAt(index);
+          return;
+        case 'alias-edit':
+          enterAliasEditAt(index);
+          return;
+        case 'move':
+          setSelectedIndex(index);
+          exitToList();
+          enterPanel();
+          return;
+        case 'delete':
+          // **`exitToList()` が必須**。メニューは PANEL モードで開いているため、ここで抜けないと
+          // `contextAction === null` になった瞬間に `movePanelItem`（= `results[selectedIndex]`）が
+          // 非 null となり、削除の直後に無関係な行の MovePanel が開いてしまう。
+          // 他の項目は各ハンドラ内（edit/alias-edit）か明示（move）で LIST を経由している。
+          exitToList();
+          handleDeleteAt(index);
+          return;
+        default:
+          return;
+      }
+    },
+    [contextAction, enterInlineEditAt, enterAliasEditAt, handleDeleteAt, exitToList, enterPanel],
+  );
+
+  // 行メニューの表示ラベル（`rowMenuModel` はラベルを持たず、キー → 文言の対応はここで解決する）。
+  // 「削除」は既存の `commonDelete` を流用する（フォルダ側の「フォルダを削除」と対になる文言）。
+  const rowMenuLabels: Record<RowMenuKey, string> = {
+    edit: t('popupRowMenuEdit'),
+    'alias-edit': t('popupRowMenuAliasEdit'),
+    move: t('popupRowMenuMove'),
+    delete: t('commonDelete'),
+  };
 
   // Escape を1段階ずつ解決する（U8a: 検索ボックスへ戻る → キーワードクリア → フォルダ絞り込み解除 → 閉じる）。
   const currentFocusArea = toFocusArea(mode.mode, listFocus);
@@ -806,15 +880,23 @@ const Popup = () => {
         // folder-delete: 右クリックメニュー / 確認ダイアログ。PANEL のインテント（↑↓/Enter/Escape）を
         // それぞれの命令ハンドルへ流す。確認ダイアログはボタンが**横並び**のため `←→` も同じ移動として扱う
         // （`resolveKeyIntent` は縦リスト前提で `↑↓` しか候補移動に割り当てないため、ここで補う）。
-        if (folderAction !== null) {
-          const handle = folderAction.kind === 'menu' ? folderMenuActionsRef.current : confirmDialogActionsRef.current;
+        if (contextAction !== null) {
+          // メニュー（フォルダ/行）は同じ命令ハンドルを共用する（同時に開かないため1つで足りる）。
+          const handle =
+            contextAction.kind === 'folder-confirm' ? confirmDialogActionsRef.current : contextMenuActionsRef.current;
           const folderIntent = resolveKey(e, listFocus);
-          if (folderIntent === 'panel:candidate-up' || (folderAction.kind === 'confirm' && e.key === 'ArrowLeft')) {
+          if (
+            folderIntent === 'panel:candidate-up' ||
+            (contextAction.kind === 'folder-confirm' && e.key === 'ArrowLeft')
+          ) {
             e.preventDefault();
             handle?.selectPrev();
             return;
           }
-          if (folderIntent === 'panel:candidate-down' || (folderAction.kind === 'confirm' && e.key === 'ArrowRight')) {
+          if (
+            folderIntent === 'panel:candidate-down' ||
+            (contextAction.kind === 'folder-confirm' && e.key === 'ArrowRight')
+          ) {
             e.preventDefault();
             handle?.selectNext();
             return;
@@ -932,13 +1014,13 @@ const Popup = () => {
     handleBulkDelete,
     addCurrentPanelOpen,
     handleOpenAddCurrent,
-    folderAction,
+    contextAction,
   ]);
 
   // ブラウザ既定のコンテキストメニューをポップアップ全体で抑止する（`folder-delete`）。
   //
   // 拡張のポップアップに出る既定メニュー（戻る/再読み込み/印刷/ページのソースを表示…）はこの UI では
-  // 何の役にも立たず、独自メニュー（`FolderContextMenu`）や確認ダイアログの上に重なって操作を妨げる。
+  // 何の役にも立たず、独自メニュー（`ContextMenu`）や確認ダイアログの上に重なって操作を妨げる。
   // 特に、独自メニューを開いた状態でもう一度右クリックすると、オーバーレイの上に既定メニューが出てしまい
   // 「消すのに一度別の場所をクリックする」必要があった（requirements AC-1 の趣旨に反する）。
   //
@@ -1161,7 +1243,7 @@ const Popup = () => {
               onEnterInlineEdit={enterInlineEditAt}
               onCommitEdit={handleCommitEdit}
               onCancelEdit={handleCancelEdit}
-              onDeleteRow={handleDeleteAt}
+              onRowContextMenu={handleRowContextMenu}
               onRowMouseDown={(index, e) => dnd.onRowMouseDown(results[index], e)}
               selectionMode={selectionMode}
               selectedIds={selectedIds}
@@ -1182,7 +1264,7 @@ const Popup = () => {
           （currentParentId=null。design.md 参照）。addCurrentPanelOpen 中は排他にする（PANEL モード共用・U14）。 */}
       {mode.mode === 'PANEL' &&
         !addCurrentPanelOpen &&
-        folderAction === null &&
+        contextAction === null &&
         (bulkMovePanel ? selectedItems.length > 0 : movePanelItem !== null) && (
           <MovePanel
             folders={folders}
@@ -1207,41 +1289,53 @@ const Popup = () => {
         />
       )}
       {/* フォルダの右クリックメニュー（folder-delete）。PANEL モードを他パネルと共用するため、
-          描画条件は `folderAction` の種別で排他にする。 */}
-      {mode.mode === 'PANEL' && folderAction?.kind === 'menu' && (
-        <FolderContextMenu
-          x={folderAction.x}
-          y={folderAction.y}
+          描画条件は `contextAction` の種別で排他にする。 */}
+      {mode.mode === 'PANEL' && contextAction?.kind === 'folder-menu' && (
+        <ContextMenu
+          x={contextAction.x}
+          y={contextAction.y}
           items={[
             {
               key: 'delete',
               label: t('popupFolderMenuDelete'),
               danger: true,
-              disabled: !folderAction.deletable,
+              disabled: !contextAction.deletable,
               disabledHint: t('popupFolderMenuDeleteDisabled'),
             },
           ]}
           onSelect={key => void handleFolderMenuSelect(key)}
-          onClose={closeFolderAction}
-          actionsRef={folderMenuActionsRef}
+          onClose={closeContextAction}
+          actionsRef={contextMenuActionsRef}
+        />
+      )}
+      {/* 結果行の右クリックメニュー（row-context-menu）。項目の並びは `rowMenuModel` が決め、ここでは
+          キー → 表示ラベル（i18n）の対応だけを与える。 */}
+      {mode.mode === 'PANEL' && contextAction?.kind === 'row-menu' && (
+        <ContextMenu
+          x={contextAction.x}
+          y={contextAction.y}
+          items={buildRowMenuItems().map(spec => ({ ...spec, label: rowMenuLabels[spec.key] }))}
+          onSelect={handleRowMenuSelect}
+          onClose={closeContextAction}
+          actionsRef={contextMenuActionsRef}
         />
       )}
       {/* 中身のあるフォルダの削除確認（folder-delete）。空フォルダでは表示しない。 */}
-      {mode.mode === 'PANEL' && folderAction?.kind === 'confirm' && (
+      {mode.mode === 'PANEL' && contextAction?.kind === 'folder-confirm' && (
         <ConfirmDialog
-          title={t('popupFolderDeleteConfirmTitle', folderAction.title)}
+          title={t('popupFolderDeleteConfirmTitle', contextAction.title)}
           message={
-            folderAction.contents === null
+            contextAction.contents === null
               ? t('popupFolderDeleteConfirmBodyUnknown')
               : t('popupFolderDeleteConfirmBody', [
-                  String(folderAction.contents.bookmarks),
-                  String(folderAction.contents.folders),
+                  String(contextAction.contents.bookmarks),
+                  String(contextAction.contents.folders),
                 ])
           }
           confirmLabel={t('popupFolderDeleteConfirmAction')}
           danger
           onConfirm={handleFolderDeleteConfirm}
-          onCancel={closeFolderAction}
+          onCancel={closeContextAction}
           actionsRef={confirmDialogActionsRef}
         />
       )}
