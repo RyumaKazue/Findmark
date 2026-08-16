@@ -10,7 +10,22 @@ import { useI18n } from '@extension/i18n';
 import { normalizer } from '@extension/shared';
 import { cn } from '@extension/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
+
+/**
+ * Popup の document リスナー（外側クリック）から呼ばれる操作（`alias-editor-close`）。
+ * `MovePanel` / `ContextMenu` / `FolderTree` と同じ命令ハンドル方式。
+ */
+interface AliasEditorActions {
+  /**
+   * 入力途中の文字を別名として確定する（**閉じない**）。
+   *
+   * 閉じる操作そのものは呼び出し側（Popup）が行う。外側クリックでは押した場所によって「閉じ方」が異なる
+   * （右ペイン＝検索ボックスへフォーカスを戻す / 左ペイン・ヘッダー＝クリック先にフォーカスを渡す）ため、
+   * 確定だけを本コンポーネントの責務として切り出している。
+   */
+  commitPending: () => void;
+}
 
 interface AliasEditorProps {
   /** 編集対象ブックマークの URL（別名紐付けキーの元）。 */
@@ -23,6 +38,8 @@ interface AliasEditorProps {
   onCommit: (aliases: string[]) => Promise<void> | void;
   /** 編集終了（Escape 等）。呼び出し側で ALIAS_EDIT を抜ける。 */
   onClose: () => void;
+  /** 外側クリックからの終了を受け取るための命令ハンドル（`alias-editor-close`）。 */
+  actionsRef?: RefObject<AliasEditorActions | null>;
 }
 
 /** 重複ハイライト（blink）の表示時間。 */
@@ -50,7 +67,14 @@ const normalize = (s: string): string => normalizer.normalizeText(s);
  * 確定/重複/上限/削除の判定は純粋モジュール `aliasEditorModel` に委譲し、本コンポーネントは
  * 表示・フォーカス・楽観更新（`onCommit`）・一時的な視覚効果（blink/上限フラッシュ）のみを担う。
  */
-export const AliasEditor = ({ url, initialAliases, matchedAliases, onCommit, onClose }: AliasEditorProps) => {
+export const AliasEditor = ({
+  url,
+  initialAliases,
+  matchedAliases,
+  onCommit,
+  onClose,
+  actionsRef,
+}: AliasEditorProps) => {
   const { t } = useI18n();
   const [chips, setChips] = useState<string[]>(() => orderMatchedFirst(initialAliases, matchedAliases));
   const [input, setInput] = useState('');
@@ -149,6 +173,36 @@ export const AliasEditor = ({ url, initialAliases, matchedAliases, onCommit, onC
     [chips],
   );
 
+  // 入力途中の文字を確定してから閉じる（`alias-editor-close`）。外側クリックと [完了] の共通経路。
+  //
+  // `Escape` が**破棄**であるのに対し、こちらは**確定**する（打ちかけの語を失わせない。取りやめたいときの
+  // 手段として Escape を残す、という使い分け）。`commitAlias` の結果が `duplicate`/`at-limit`/`too-long` でも
+  // **必ず閉じる**: 外側を押した/[完了] を押したという意思のほうが明確であり、上限超過で閉じられなくなると
+  // 出口を失うため（重複・上限の視覚フィードバックは閉じる瞬間には意味を持たない）。
+  const commitPending = useCallback(() => {
+    if (input.trim() !== '') {
+      handleCommit();
+    }
+  }, [input, handleCommit]);
+
+  /** [完了] ボタン用。確定してから閉じる。 */
+  const commitPendingAndClose = useCallback(() => {
+    commitPending();
+    onClose();
+  }, [commitPending, onClose]);
+
+  // 命令ハンドルを毎レンダー最新の closure で公開する（既存3コンポーネントと同じ書き方）。
+  // 公開するのは「確定」だけ。閉じ方は押した場所で変わるため Popup 側が決める。
+  useEffect(() => {
+    if (!actionsRef) {
+      return;
+    }
+    actionsRef.current = { commitPending };
+    return () => {
+      actionsRef.current = null;
+    };
+  }, [actionsRef, commitPending]);
+
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLInputElement>) => {
       // IME 変換確定の Enter/Space をチップ確定に使わない（日本語別名対応）。
@@ -240,13 +294,29 @@ export const AliasEditor = ({ url, initialAliases, matchedAliases, onCommit, onC
         />
       </div>
 
-      {/* ヒント文（左）と上限表示（右）。 */}
+      {/* ヒント文（左）と、上限表示 + [完了]（右）。
+          [完了]（`alias-editor-close`）は**可視な終了手段**。インライン編集には [キャンセル]/[保存] があるのに
+          別名編集にだけ押して終わる手段が無く、「どうやって終わるのか分からない」状態だったため追加した。
+          チップ入力ボックスの内側ではなくヒント行に置くのは、別名が増えると入力ボックスが内部スクロールになり
+          常に見える位置を確保できないため。 */}
       <div className="flex items-center justify-between px-1">
         <span className="text-ink-faint text-[11px]">{t('popupAliasHint')}</span>
-        <span className={cn('font-mono text-[11px]', limitFlash ? 'text-danger font-bold' : 'text-ink-faint')}>
-          {chips.length} / {MAX_ALIASES}
+        <span className="flex items-center gap-2">
+          <span className={cn('font-mono text-[11px]', limitFlash ? 'text-danger font-bold' : 'text-ink-faint')}>
+            {chips.length} / {MAX_ALIASES}
+          </span>
+          <button
+            type="button"
+            // 入力欄からフォーカスを奪わない（奪うと確定前に blur が走り、押下の意味が変わりうる）。
+            onMouseDown={e => e.preventDefault()}
+            onClick={commitPendingAndClose}
+            className="border-line-input text-ink-soft hover:bg-pane-3 flex h-[22px] flex-none cursor-pointer items-center rounded-md border bg-white px-2 text-[11px] font-bold">
+            {t('commonDone')}
+          </button>
         </span>
       </div>
     </div>
   );
 };
+
+export type { AliasEditorActions };

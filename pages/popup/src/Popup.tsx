@@ -3,6 +3,7 @@ import { I18nProvider, useI18n } from '@extension/i18n';
 import { withErrorBoundary } from '@extension/shared';
 import { ErrorDisplay, cn } from '@extension/ui';
 import { AddCurrentPanel } from '@src/components/AddCurrentPanel';
+import { resolveOutsideClick } from '@src/components/aliasEditorModel';
 import { BulkActionBar } from '@src/components/BulkActionBar';
 import { ConfirmDialog } from '@src/components/ConfirmDialog';
 import { ContextMenu } from '@src/components/ContextMenu';
@@ -47,6 +48,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SearchResultItem } from '@extension/shared';
 import type { PopupSession } from '@extension/storage';
 import type { AddCurrentPanelActions } from '@src/components/AddCurrentPanel';
+import type { AliasEditorActions } from '@src/components/AliasEditor';
 import type { ConfirmDialogActions } from '@src/components/ConfirmDialog';
 import type { ContextMenuActions } from '@src/components/ContextMenu';
 import type { FolderContents } from '@src/components/folderDeleteModel';
@@ -162,6 +164,9 @@ const Popup = () => {
   // 現在ページ登録パネルのキーボードインテント実行体（AddCurrentPanel が公開）。
   const addCurrentActionsRef = useRef<AddCurrentPanelActions | null>(null);
   const addCurrent = useAddCurrent(folders, refresh, rowActions);
+
+  // 別名編集の命令ハンドル（外側クリックからの終了用・`alias-editor-close`）。編集中の行の AliasEditor が公開する。
+  const aliasEditorActionsRef = useRef<AliasEditorActions | null>(null);
 
   // 別名編集（ALIAS_EDIT）の対象行。mode.targetId（node.id）から現在の結果を引く。
   const editingAliasId = mode.mode === 'ALIAS_EDIT' ? mode.targetId : null;
@@ -283,8 +288,10 @@ const Popup = () => {
   }, []);
 
   // 別名編集に入る（選択行を対象にする）。対象行を選択インデックスへ合わせ、仮想スクロールで可視化する。
-  // 既に別の行を別名編集中でも切り替えられるよう、一旦 LIST へ戻してから入り直す
-  // （ENTER_ALIAS_EDIT は LIST からのみ有効。別行の別名/「＋別名」クリックで現在の入力が閉じて対象が移る）。
+  // 既に別の行を別名編集中でも切り替えられるよう、一旦 LIST へ戻してから入り直す（ENTER_ALIAS_EDIT は
+  // LIST からのみ有効）。※`alias-editor-close` 以降、**マウスでの対象切り替えは2クリックになる**:
+  // 1回目の別名エリアクリックは外側クリックとして現在の編集を閉じるだけで飲まれ、2回目でこの関数に届く。
+  // キーボード（`Ctrl+;`）と、閉じている状態からの1クリックは従来どおり1アクションで入れる。
   const enterAliasEditAt = useCallback(
     (index: number) => {
       const id = results[index]?.node.id;
@@ -1017,6 +1024,54 @@ const Popup = () => {
     contextAction,
   ]);
 
+  // 別名編集中の外側クリックで編集を閉じる（`alias-editor-close`）。
+  //
+  // 従来、別名編集を閉じる手段は `Escape` と空入力の `Enter` だけで、**マウスだけでは終われなかった**。
+  // ここでは押下位置に応じて3通りに振り分ける（判定は純粋関数 `resolveOutsideClick`）:
+  //   - 編集の内側 → 何もしない
+  //   - 右ペイン   → 閉じたうえで**クリック自体を無効化**する（他の行を押してもブックマークを開かせない。
+  //                  編集中の誤クリックでポップアップが閉じ、編集文脈を失う事故を防ぐ）
+  //   - それ以外   → 閉じるだけ（左ペインのスコープ変更・検索ボックスへの入力は1クリックで完了させる）
+  //
+  // `mousedown` ではなく **`click` のキャプチャフェーズ**を使う。`mousedown` を止めても後続の `click` は
+  // 別途発火するため、飲むには両方を扱うフラグが要る。`click` 1本なら状態を持たずに完結する。
+  // リスナーの登録自体を ALIAS_EDIT 中に限定し、他モードのクリックには一切のコストと影響を与えない。
+  useEffect(() => {
+    if (currentMode !== 'ALIAS_EDIT') {
+      return;
+    }
+    const onClickCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const action = resolveOutsideClick({
+        insideEditor: Boolean(target?.closest('[data-alias-editing]')),
+        inResultPane: Boolean(target?.closest('[data-pane="result"]')),
+      });
+      if (action === 'ignore') {
+        return;
+      }
+      if (action === 'close-and-swallow') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      // 入力途中の文字は別名として確定してから閉じる（`Escape` の「破棄」と使い分ける）。
+      // 命令ハンドル未接続（理論上のみ）でも閉じられなくならないよう、確定は best-effort にする。
+      aliasEditorActionsRef.current?.commitPending();
+
+      if (action === 'close-and-swallow') {
+        // 右ペイン: クリックを飲んだためフォーカスの行き先が無い。検索ボックスへ戻す（既存の終了経路）。
+        closeAliasEdit();
+        return;
+      }
+      // 左ペイン・ヘッダー: このあとクリック先（フォルダ・検索ボックス等）が自然にフォーカスを取る。
+      // ここで `focusSearch()` を呼ぶと、検索ボックスへ移した直後にクリック先が奪い返す二段階の遷移になり、
+      // フォーカスリングが一瞬ちらつく。モードを LIST へ戻すだけに留め、DOM フォーカスは触らない。
+      exitToList();
+      setListFocus('search');
+    };
+    document.addEventListener('click', onClickCapture, true);
+    return () => document.removeEventListener('click', onClickCapture, true);
+  }, [currentMode, closeAliasEdit, exitToList]);
+
   // ブラウザ既定のコンテキストメニューをポップアップ全体で抑止する（`folder-delete`）。
   //
   // 拡張のポップアップに出る既定メニュー（戻る/再読み込み/印刷/ページのソースを表示…）はこの UI では
@@ -1240,6 +1295,7 @@ const Popup = () => {
               onEnterAliasEdit={enterAliasEditAt}
               onCommitAliases={commitAliases}
               onCloseAliasEdit={closeAliasEdit}
+              aliasEditorActionsRef={aliasEditorActionsRef}
               onEnterInlineEdit={enterInlineEditAt}
               onCommitEdit={handleCommitEdit}
               onCancelEdit={handleCancelEdit}

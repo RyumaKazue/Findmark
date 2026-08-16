@@ -1,9 +1,10 @@
 import { ResultRow } from './ResultRow.js';
 import { computeWindow } from './virtualization.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { AliasEditorActions } from './AliasEditor.js';
 import type { CommitPlan } from './inlineEditModel.js';
 import type { SearchResultItem } from '@extension/shared';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, RefObject } from 'react';
 
 /** 結果行の固定高さ（docs/design「固定寸法」56px）。仮想スクロールの前提。 */
 const ROW_HEIGHT = 56;
@@ -41,6 +42,8 @@ interface ResultListProps {
   onCommitAliases?: (aliases: string[]) => Promise<void> | void;
   /** 別名編集を終了する。 */
   onCloseAliasEdit?: () => void;
+  /** 別名編集の命令ハンドル（外側クリックからの終了用・`alias-editor-close`）。編集中の行にだけ渡す。 */
+  aliasEditorActionsRef?: RefObject<AliasEditorActions | null>;
   /** 指定インデックスの行でインライン編集に入る。 */
   onEnterInlineEdit?: (index: number) => void;
   /** インライン編集中の行の確定内容を反映する。 */
@@ -83,6 +86,7 @@ export const ResultList = ({
   onEnterAliasEdit,
   onCommitAliases,
   onCloseAliasEdit,
+  aliasEditorActionsRef,
   onEnterInlineEdit,
   onCommitEdit,
   onCancelEdit,
@@ -175,6 +179,8 @@ export const ResultList = ({
                     onEnterAliasEdit={onEnterAliasEdit ? () => onEnterAliasEdit(index) : undefined}
                     onCommitAliases={onCommitAliases}
                     onCloseAliasEdit={onCloseAliasEdit}
+                    aliasEditorActionsRef={isEditingThisAlias ? aliasEditorActionsRef : undefined}
+                    aliasEditingElsewhere={editingAliasId !== null && !isEditingThisAlias}
                     onEnterInlineEdit={onEnterInlineEdit ? () => onEnterInlineEdit(index) : undefined}
                     onCommitEdit={onCommitEdit}
                     onCancelEdit={onCancelEdit}
