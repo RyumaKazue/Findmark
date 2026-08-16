@@ -87,7 +87,7 @@ Chrome拡張の popup は最大 800×600 なので 760×560 は収まる。`html
   - 削除 = 白地 `1px solid #E1C4C4` / `#C0392B`
   - 選択解除 = 枠なしテキスト `#5A6480`
 - **行**: ファビコン位置が **16×16 チェックボックス**（radius 4）に置換。選択済み = accent 塗り + 白 `✓`、行背景 `#F4F6FE`、チップ bg は `#E4E9FB`。未選択 = `1.5px solid #C7CBD4` の白枠。**未選択行もチェックボックスを表示**する。
-- **表示条件（`selection-mode` で改訂）**: チェックボックスは**選択モード中のみ**表示する（旧仕様の「行ホバーで段階的に出す」は廃止。ホバーでは何も出さない）。またチェックボックスは**表示専用**であり、押下対象は**行全体**（選択モード中は行のどこを押しても選択がトグルする）。選択モード中は行の ✎/🗑 アイコンと「＋別名」チップを描画しない（押下対象を行1つに保つ）。
+- **表示条件（`selection-mode` で改訂）**: チェックボックスは**選択モード中のみ**表示する（旧仕様の「行ホバーで段階的に出す」は廃止。ホバーでは何も出さない）。またチェックボックスは**表示専用**であり、押下対象は**行全体**（選択モード中は行のどこを押しても選択がトグルする）。「＋別名」チップは選択モード中は描画しない（押下対象を行1つに保つ）。※`row-context-menu` で ✎/🗑 アイコン自体を全モードで廃止した。
 - **ヘッダーの差し替え条件**: 一括操作バーが出るのは**1件以上選択中**のときだけ。選択モードに入っただけ（0件）ではヘッダーは検索ボックス（1a）のままで、「☑ 選択」トグルが ON 表示になる＝**選択モード中も検索して選び直せる**。
 
 ### 1g — ドラッグ&ドロップ中（オプション）
@@ -132,7 +132,7 @@ padding: 0 16px; border-bottom: 1px solid #EFF1F4;
   - マッチ: チップ `background: accent; color: #FFFFFF`（最有力行はさらに `box-shadow: 0 0 0 3px rgba(79,107,237,0.16)`）
   - 選択: 行 `background: #F4F6FE`、チップ bg `#E4E9FB`
   - dimmed: 行 `opacity: 0.4`
-  - hover（HTMLでは未表現・実装で追加）: 行 `background: #FAFBFC`、右端に編集/削除アイコンをフェードイン
+  - hover（HTMLでは未表現・実装で追加）: 行 `background: #FAFBFC`。※右端への編集/削除アイコンのフェードインは `row-context-menu` で**廃止**（操作は行の右クリックメニューへ集約）。ホバーでは背景色以外の変化を出さない
 
 **頭文字アバター（ファビコン取得失敗時）**: 16×16, radius 4, 白文字 700 9px（日本語頭文字は Noto Sans JP 9px）、中央寄せ。色は URL ホスト名のハッシュで固定割り当て。デザインで使用した色: `#2E7CF6` `#E8862B` `#2F74C0` `#1F2430` `#C0447B` `#6D5AE0` `#2B8FB8` `#4B8B3B` `#7A5AC8`。
 
@@ -149,6 +149,7 @@ padding: 0 16px; border-bottom: 1px solid #EFF1F4;
 | `↑ ↓` | 結果行の選択移動。検索ボックスにフォーカスがある状態で押すと、フォーカスが外れると同時に選択行が1つ移動する |
 | `Enter` / `⌘/Ctrl + Enter` | 選択行を現在タブ / 新規タブで開く。**フォーカス位置に関係なく**選択行が対象（選択行は常に存在し、既定は先頭行） |
 | `←` / `→` | ペイン移動。右ペインで `←` → 左ペインへ、左ペインで `→` → 右ペインへ。左ペイン内の `←` は親フォルダへ移動。**検索ボックス内ではキャレット移動専用**（ペイン移動には使わない） |
+| **行の右クリック** | 行の操作メニュー（編集 / 別名を編集 / フォルダへ移動… /（区切り）/ 削除）。※`row-context-menu` で追加。ホバーの ✎／🗑 アイコンは同時に**廃止**した（行の右端にだけ現れる小さな押下対象で、隣を押すとサイトが開く誤操作の主因だったため）。選択モード中は開かない |
 | 行ダブルクリック / `F2`・`⌘/Ctrl + E` | インライン編集モード（1d）へ。他行 dimmed。※素キー `E` は「文字を打つと検索ボックスへ復帰」の共通ルールと衝突するため不採用 |
 | 別名エリアクリック / `⌘/Ctrl + ;` | 別名編集モード（1e）。`Enter` 確定、`,` 区切りでも確定、`Backspace`（空入力時）で直前チップ削除、チップ `✕` で個別削除。※素キー `A` は上と同じ理由で不採用 |
 | `Esc` | 編集中は編集キャンセル（変更を破棄）→ 通常表示に戻る。通常表示では**1段階だけ戻る**（左/右ペインにフォーカス → 検索ボックスへ / キーワードあり → クリア / スコープが「すべて」以外 → 「すべて」へ / いずれでもない → 閉じる） |
@@ -260,12 +261,12 @@ type UiState = {
 | `FolderTree` | 再帰ツリー、開閉、選択、ドロップ先ハイライト、深さ省略 | `folders`, `expandedIds`, `selectedId`, `dropTargetId`, `onToggle`, `onSelect` |
 | `FolderTreeItem` | 1行（三角 / アイコン / 名前 / 件数）+ 子の再帰描画 | `folder`, `depth`, `state` |
 | `ResultList` | 仮想スクロール、キーボードナビ、空状態 | `results`, `focusedIndex`, `selectedIds` |
-| `ResultRow` | 56px 2段組、チップ、チェックボックス（選択モード中のみ・表示専用）、dimmed | `bookmark`, `matchedAliases`, `selectionMode`, `checked`, `variant: 'default' \| 'selected' \| 'dimmed' \| 'match'` |
+| `ResultRow` | 56px 2段組、チップ、チェックボックス（選択モード中のみ・表示専用）、右クリック、dimmed | `bookmark`, `matchedAliases`, `selectionMode`, `checked`, `variant: 'default' \| 'selected' \| 'dimmed' \| 'match'` |
 | `RowEditor` | 1d の展開編集フォーム | `draft`, `onChange`, `onSave`, `onCancel` |
 | `AliasChipInput` | 1e のチップ入力 | `aliases`, `input`, `onAdd`, `onRemove` |
 | `AliasChip` | pill 1個（通常 / マッチ / 削除可 / 部分一致マーカー） | `label`, `matched`, `matchRange`, `onRemove` |
 | `Favicon` | 画像 + 失敗時の頭文字タイル | `url`, `title` |
-| `FolderContextMenu` | フォルダ行の右クリックメニュー（項目配列駆動・PANEL モード） | `x`, `y`, `items`, `onSelect`, `onClose`, `actionsRef` |
+| `ContextMenu` | 右クリックメニュー（フォルダ行/結果行の共用。項目配列駆動・区切り線対応・PANEL モード） | `x`, `y`, `items`, `onSelect`, `onClose`, `actionsRef` |
 | `ConfirmDialog` | 破壊的操作の確認（汎用。既定フォーカスは[キャンセル]） | `title`, `message`, `confirmLabel`, `danger`, `onConfirm`, `onCancel`, `actionsRef` |
 | `DragGhost` | 1g の浮遊カード | `title`, `count`, `position` |
 | `Breadcrumb` | パス表示（深さに応じた省略） | `path: string[]` |

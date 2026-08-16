@@ -32,22 +32,25 @@ interface ResultRowProps {
   onCommitAliases?: (aliases: string[]) => Promise<void> | void;
   /** 別名編集を終了する（別名編集中のみ使用）。 */
   onCloseAliasEdit?: () => void;
-  /** ホバーの編集アイコン/ダブルクリックでインライン編集に入る（INLINE_EDIT）。 */
+  /** ダブルクリックでインライン編集に入る（INLINE_EDIT）。右クリックメニューからの実行は Popup 側で行う。 */
   onEnterInlineEdit?: () => void;
   /** インライン編集の確定内容を反映する（インライン編集中のみ使用）。 */
   onCommitEdit?: (plan: CommitPlan) => void;
   /** インライン編集を終了する（インライン編集中のみ使用）。 */
   onCancelEdit?: () => void;
-  /** ホバーの削除アイコンで削除する（アンドゥ付き）。 */
-  onDelete?: () => void;
+  /**
+   * 行の右クリック（`row-context-menu`）。ブラウザ既定のメニューは本コンポーネントが抑止し、座標を親へ渡す。
+   * メニューの表示・項目の実行は Popup が担う（PANEL モードのため）。
+   */
+  onContextMenu?: (position: { x: number; y: number }) => void;
   /** 行のドラッグ開始候補（mousedown。5px 超で D&D 開始・U12）。編集中の行では渡さない。 */
   onDragStart?: (e: MouseEvent) => void;
   /** この行が選択中（チェック済み）か（U13）。 */
   checked?: boolean;
   /**
    * 選択モード中か（`selection-mode`）。true の間は行のクリックが「開く」ではなく「選ぶ」になり、
-   * ファビコン位置に表示専用のチェックボックスが出る。行内の編集導線（✎/🗑・別名エリア・ダブルクリック）は
-   * すべて無効化し、押下対象を「行」1つに単純化する。
+   * ファビコン位置に表示専用のチェックボックスが出る。行内の編集導線（別名エリア・ダブルクリック・右クリック
+   * メニュー）はすべて無効化し、押下対象を「行」1つに単純化する。
    */
   selectionMode?: boolean;
   /** 行クリック（選択モード中）・Ctrl/Cmd+クリック（通常モード）で選択をトグルする（開かない）。 */
@@ -93,7 +96,7 @@ export const ResultRow = ({
   onEnterInlineEdit,
   onCommitEdit,
   onCancelEdit,
-  onDelete,
+  onContextMenu,
   onDragStart,
   checked = false,
   selectionMode = false,
@@ -149,10 +152,13 @@ export const ResultRow = ({
   // 数 px のずれで意図と違う結果になることが構造的に起きない。これが本単位の中心的な変更であり、従来の
   // 「ホバーで現れる 16×16 のチェックボックスだけが選択導線」という設計（周囲を押すとサイトが開いていた）を置き換える。
   //
-  // 通常モードの分岐は従来どおり: 編集/削除アイコン（data-row-action）→ 各操作、別名チップ領域
-  // （data-alias-area）→ 別名編集、Ctrl/Cmd+クリック・Shift+クリック → 選択（`selectionModel` 側で選択モードへ
-  // 自動遷移する）、それ以外 → 開く。ネストした interactive 要素（button in button）を避けるため、
-  // 単一の button 上でクリック対象により分岐する規律は維持する。
+  // 通常モードの分岐: 別名チップ領域（data-alias-area）→ 別名編集、Ctrl/Cmd+クリック・Shift+クリック → 選択
+  // （`selectionModel` 側で選択モードへ自動遷移する）、それ以外 → 開く。ネストした interactive 要素
+  // （button in button）を避けるため、単一の button 上でクリック対象により分岐する規律は維持する。
+  //
+  // `row-context-menu`: ホバーで現れる ✎／🗑 アイコン（data-row-action）は**廃止**した。行の右端にだけ現れる
+  // 小さな押下対象で、隣を押すとサイトが開く誤操作の主因だったため。編集・削除は右クリックメニューへ移した。
+  // 別名チップ領域は存置する（見えている要素そのものが押下対象で、ホバーで出入りしないため取り違えにくい）。
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
     if (selectionMode) {
       if (e.shiftKey) {
@@ -163,14 +169,6 @@ export const ResultRow = ({
       return;
     }
     const target = e.target as HTMLElement;
-    if (onDelete && target.closest('[data-row-action="delete"]')) {
-      onDelete();
-      return;
-    }
-    if (onEnterInlineEdit && target.closest('[data-row-action="edit"]')) {
-      onEnterInlineEdit();
-      return;
-    }
     if (e.shiftKey) {
       onRangeSelect?.();
       return;
@@ -186,15 +184,25 @@ export const ResultRow = ({
     onOpen();
   };
 
-  // ドラッグ開始は行本体のみ。編集/削除アイコン・別名エリア上の mousedown は既存のクリック分岐を優先する
-  // （それらの領域での微小なブレでドラッグが誤発火しないようにする）。選択モード中はこれらの領域自体を
-  // 描画しない（別名チップは表示のみ）ため、実質「行全体がドラッグ開始点」になる。
+  // ドラッグ開始は行本体のみ。別名エリア上の mousedown は既存のクリック分岐を優先する（チップ上の微小な
+  // ブレでドラッグが誤発火しないようにする）。選択モード中は別名エリアが表示のみになるため、実質
+  // 「行全体がドラッグ開始点」になる。
   const handleMouseDown = (e: MouseEvent<HTMLButtonElement>) => {
     const target = e.target as HTMLElement;
-    if (!selectionMode && target.closest('[data-row-action], [data-alias-area]')) {
+    if (!selectionMode && target.closest('[data-alias-area]')) {
       return;
     }
     onDragStart?.(e);
+  };
+
+  // 右クリック（`row-context-menu`）。ブラウザ既定のメニューを抑止して独自メニューを開く。
+  // 選択モード中はメニューを出さない（行操作は一括操作バーが担う。Popup 側でも `canOpenRowMenu` で防ぐ）。
+  const handleContextMenu = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (selectionMode) {
+      return;
+    }
+    onContextMenu?.({ x: e.clientX, y: e.clientY });
   };
 
   return (
@@ -204,6 +212,7 @@ export const ResultRow = ({
       // （チェックボックス自体は装飾＝aria-hidden の表示専用要素）。通常モードでは押下＝遷移のため付けない。
       aria-pressed={selectionMode ? checked : undefined}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       // 選択モード中はダブルクリックでインライン編集に入らない（1回目のクリックは選択のトグルであり、
       // 2回目で編集が開くと「選んだつもりが編集画面」になる）。
       onDoubleClick={selectionMode ? undefined : onEnterInlineEdit}
@@ -218,7 +227,7 @@ export const ResultRow = ({
       onMouseDown={handleMouseDown}
       title={item.node.title}
       className={cn(
-        'border-line-row group flex h-14 w-full flex-none flex-col justify-center gap-[5px] border-b px-4 text-left',
+        'border-line-row flex h-14 w-full flex-none flex-col justify-center gap-[5px] border-b px-4 text-left',
         // 相互アクセント（AC-14）: 右ペインがアクティブなら選択行を濃いめの accent 淡背景（強）、
         // 非アクティブなら中立グレー背景（弱）。左バーはフォーカス枠の外へはみ出して見えるため使わない。
         selected && resultFocused && 'bg-accent-bg-selected',
@@ -249,25 +258,9 @@ export const ResultRow = ({
             <Favicon url={item.node.url ?? ''} />
           )}
         </span>
+        {/* `row-context-menu`: ホバーで右端に出していた ✎／🗑 アイコン（docs/design「hover: 右端に編集/削除
+            アイコン」）は廃止した。編集・削除は行の右クリックメニューから行う（押下対象を行内に増やさない）。 */}
         <span className="text-ink flex-1 truncate text-[13.5px] font-medium">{item.node.title}</span>
-        {/* ホバー時に右端へフェードインする編集/削除アイコン（docs/design「hover: 右端に編集/削除アイコン」）。
-            選択モード中は描画しない（行の押下対象を1つに保ち、選ぶつもりの操作で編集/削除に入らないようにする）。 */}
-        {!selectionMode && (
-          <span className="flex flex-none items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <span
-              data-row-action="edit"
-              title={t('popupRowEdit')}
-              className="text-ink-faint hover:text-accent flex h-6 w-6 items-center justify-center rounded">
-              ✎
-            </span>
-            <span
-              data-row-action="delete"
-              title={t('popupRowDelete')}
-              className="text-ink-faint hover:text-danger flex h-6 w-6 items-center justify-center rounded">
-              🗑
-            </span>
-          </span>
-        )}
       </span>
 
       {/* 2段目 */}

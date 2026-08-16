@@ -101,11 +101,17 @@
     "description": "$1 = scope path, $2 = result count",
     "message": "Directly in $1 — $2 items"
   },
-  "popupRowEdit": {
-    "message": "Edit (F2)"
+  "popupRowMenuEdit": {
+    "description": "Row context menu item: inline edit (title/URL)",
+    "message": "Edit"
   },
-  "popupRowDelete": {
-    "message": "Delete (Del)"
+  "popupRowMenuAliasEdit": {
+    "description": "Row context menu item: edit aliases",
+    "message": "Edit aliases"
+  },
+  "popupRowMenuMove": {
+    "description": "Row context menu item: open the folder picker",
+    "message": "Move to folder…"
   },
   "popupRowAliasEdit": {
     "message": "Click to edit aliases"

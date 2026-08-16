@@ -101,11 +101,17 @@
     "description": "$1 = scope path, $2 = result count",
     "message": "$1 の直下 — $2件"
   },
-  "popupRowEdit": {
-    "message": "編集（F2）"
+  "popupRowMenuEdit": {
+    "description": "Row context menu item: inline edit (title/URL)",
+    "message": "編集"
   },
-  "popupRowDelete": {
-    "message": "削除（Delete）"
+  "popupRowMenuAliasEdit": {
+    "description": "Row context menu item: edit aliases",
+    "message": "別名を編集"
+  },
+  "popupRowMenuMove": {
+    "description": "Row context menu item: open the folder picker",
+    "message": "フォルダへ移動…"
   },
   "popupRowAliasEdit": {
     "message": "クリックで別名を編集"

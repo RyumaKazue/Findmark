@@ -47,8 +47,8 @@ interface ResultListProps {
   onCommitEdit?: (plan: CommitPlan) => void;
   /** インライン編集を終了する。 */
   onCancelEdit?: () => void;
-  /** 指定インデックスの行を削除する。 */
-  onDeleteRow?: (index: number) => void;
+  /** 指定インデックスの行を右クリックする（`row-context-menu`。メニューの表示は Popup が担う）。 */
+  onRowContextMenu?: (index: number, position: { x: number; y: number }) => void;
   /** 指定インデックスの行でドラッグを開始する候補（mousedown・U12）。 */
   onRowMouseDown?: (index: number, e: MouseEvent) => void;
   /** 選択モード中か（行クリック＝選択・全行がチェックボックス表示になる・`selection-mode`）。 */
@@ -86,7 +86,7 @@ export const ResultList = ({
   onEnterInlineEdit,
   onCommitEdit,
   onCancelEdit,
-  onDeleteRow,
+  onRowContextMenu,
   onRowMouseDown,
   selectionMode = false,
   selectedIds,
@@ -178,7 +178,7 @@ export const ResultList = ({
                     onEnterInlineEdit={onEnterInlineEdit ? () => onEnterInlineEdit(index) : undefined}
                     onCommitEdit={onCommitEdit}
                     onCancelEdit={onCancelEdit}
-                    onDelete={onDeleteRow ? () => onDeleteRow(index) : undefined}
+                    onContextMenu={onRowContextMenu ? position => onRowContextMenu(index, position) : undefined}
                     onDragStart={onRowMouseDown ? e => onRowMouseDown(index, e) : undefined}
                     checked={selectedIds?.has(item.node.id) ?? false}
                     selectionMode={selectionMode}
