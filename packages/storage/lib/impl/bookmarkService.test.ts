@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const createChromeMock = () => ({
   bookmarks: {
     getTree: vi.fn(),
+    getSubTree: vi.fn(),
     get: vi.fn(),
     getChildren: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     move: vi.fn(),
     remove: vi.fn(),
+    removeTree: vi.fn(),
   },
   tabs: {
     query: vi.fn(),
@@ -179,6 +181,79 @@ describe('BookmarkService 編集系', () => {
   it('remove は remove(id) を呼ぶ', async () => {
     await service.remove('9');
     expect(chromeMock.bookmarks.remove).toHaveBeenCalledWith('9');
+  });
+
+  it('removeTree は removeTree(id) を呼ぶ（フォルダを配下ごと削除する）', async () => {
+    await service.removeTree('5');
+    expect(chromeMock.bookmarks.removeTree).toHaveBeenCalledWith('5');
+    // 単一削除の remove とは別経路であること（取り違え防止の契約）。
+    expect(chromeMock.bookmarks.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookmarkService.getSubTree', () => {
+  it('先頭要素をドメイン BookmarkNode へ写像し、children を再帰変換する', async () => {
+    chromeMock.bookmarks.getSubTree.mockResolvedValue([
+      {
+        id: '5',
+        parentId: '1',
+        title: 'chrome',
+        index: 0, // 写像で除去されるべき余分なフィールド
+        children: [
+          { id: '6', parentId: '5', title: 'Docs', url: 'https://developer.chrome.com', index: 0, dateAdded: 100 },
+          {
+            id: '7',
+            parentId: '5',
+            title: 'extensions',
+            index: 1,
+            children: [{ id: '8', parentId: '7', title: 'MV3', url: 'https://example.com/mv3', index: 0 }],
+          },
+        ],
+      },
+    ]);
+
+    const node = await service.getSubTree('5');
+
+    expect(chromeMock.bookmarks.getSubTree).toHaveBeenCalledWith('5');
+    expect(node).toEqual({
+      id: '5',
+      parentId: '1',
+      title: 'chrome',
+      url: undefined,
+      dateAdded: undefined,
+      children: [
+        {
+          id: '6',
+          parentId: '5',
+          title: 'Docs',
+          url: 'https://developer.chrome.com',
+          dateAdded: 100,
+          children: undefined,
+        },
+        {
+          id: '7',
+          parentId: '5',
+          title: 'extensions',
+          url: undefined,
+          dateAdded: undefined,
+          children: [
+            {
+              id: '8',
+              parentId: '7',
+              title: 'MV3',
+              url: 'https://example.com/mv3',
+              dateAdded: undefined,
+              children: undefined,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('対象が見つからない場合は例外を投げる', async () => {
+    chromeMock.bookmarks.getSubTree.mockResolvedValue([]);
+    await expect(service.getSubTree('missing')).rejects.toThrow('見つかりません');
   });
 });
 

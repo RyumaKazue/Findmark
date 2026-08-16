@@ -11,6 +11,7 @@ import { bookmarkService, localStateStore } from '../services.js';
 import { useI18n } from '@extension/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderTreeNode, TreeRow } from './folderTreeModel.js';
+import type { BookmarkNode } from '@extension/storage';
 import type { RefObject } from 'react';
 
 /** Popup の document リスナーから呼ばれる左ペイン操作（U8a の `folder:*` インテントの実行体）。 */
@@ -25,6 +26,20 @@ interface FolderTreeActions {
   focusAll: () => void;
   /** D&D のスプリングロード（閉じたフォルダのホバー自動展開・U12）。既に展開済みなら何もしない。 */
   expand: (id: string) => void;
+  /**
+   * フォルダツリーを再取得する（`folder-delete`）。ツリーは起動時に1回しか取得しないため、フォルダの
+   * 削除・復元の後はこれを呼ばないと左ペインに消えたフォルダが残る（表示と実データの乖離）。
+   */
+  reload: () => void;
+}
+
+/** 右クリックされたフォルダ行の情報（`folder-delete`）。`depth === 0` は最上位＝削除不可の判定に使う。 */
+interface FolderContextTarget {
+  folderId: string;
+  title: string;
+  depth: number;
+  x: number;
+  y: number;
 }
 
 interface FolderTreeProps {
@@ -42,6 +57,8 @@ interface FolderTreeProps {
   actionsRef: RefObject<FolderTreeActions | null>;
   /** D&D のドロップ先候補フォルダ ID（破線ハイライト・U12）。null = ハイライトなし。 */
   dropTargetId?: string | null;
+  /** フォルダ行の右クリック（`folder-delete`）。メニューの表示は Popup が担う（PANEL モードのため）。 */
+  onFolderContextMenu?: (target: FolderContextTarget) => void;
   /**
    * 行を描画してよいか（U19）。`false` の間は行を描画しない（フォルダ取得は継続する）。
    * 状態復元（スコープ）が当たる前に既定スコープ「すべて」で行を描画してしまうと、起動直後に一瞬「すべて」が
@@ -81,6 +98,7 @@ export const FolderTree = ({
   onFoldersLoaded,
   actionsRef,
   dropTargetId = null,
+  onFolderContextMenu,
   ready = true,
 }: FolderTreeProps) => {
   const { t } = useI18n();
@@ -95,6 +113,17 @@ export const FolderTree = ({
   // 行キー → ref コールバックのキャッシュ（identity を安定させ ref の不要な着脱を避ける）。
   const refCallbackCache = useRef<Map<string, (el: HTMLElement | null) => void>>(new Map());
 
+  // 取得したツリーを state と親へ反映する（初回取得・再取得で共通）。
+  // 展開状態の初期化は初回だけの関心事のため、ここには含めない。
+  const applyTree = useCallback(
+    (tree: BookmarkNode[]) => {
+      const built = buildFolderTree(tree);
+      setFolders(built);
+      onFoldersLoaded(built);
+    },
+    [onFoldersLoaded],
+  );
+
   // 起動時: フォルダツリーと展開状態を並行取得。初回は最上位フォルダを既定展開にする。
   useEffect(() => {
     let active = true;
@@ -103,13 +132,11 @@ export const FolderTree = ({
         if (!active) {
           return;
         }
-        const built = buildFolderTree(tree);
-        setFolders(built);
-        onFoldersLoaded(built);
+        applyTree(tree);
         if (local.isExpandedInitialized) {
           setExpandedIds(new Set(local.expandedFolderIds));
         } else {
-          const topIds = built.map(f => f.id);
+          const topIds = buildFolderTree(tree).map(f => f.id);
           setExpandedIds(new Set(topIds));
           void localStateStore.initializeExpanded(topIds);
         }
@@ -118,7 +145,17 @@ export const FolderTree = ({
     return () => {
       active = false;
     };
-  }, [onFoldersLoaded]);
+  }, [applyTree]);
+
+  // フォルダツリーの再取得（`folder-delete` の削除・アンドゥ後）。展開状態は保ったまま木だけ差し替える
+  // （削除されたフォルダの ID が展開集合に残っても、可視行の算出は現在の木を基準にするため実害はない。
+  //  永続化された孤児 ID は U17 の Service Worker 起動時クリーンアップが除去する）。
+  const reload = useCallback(() => {
+    bookmarkService
+      .getTree()
+      .then(applyTree)
+      .catch((e: unknown) => console.error('[FolderTree] フォルダツリーの再取得に失敗しました:', e));
+  }, [applyTree]);
 
   // スコープ変更時、その祖先フォルダ（自身は含まない）を自動展開し、スコープ中フォルダを可視にする（AC-1）。
   useEffect(() => {
@@ -240,11 +277,11 @@ export const FolderTree = ({
 
   // 命令ハンドルを毎レンダー最新の closure で公開する（useImperativeHandle 相当）。
   useEffect(() => {
-    actionsRef.current = { moveFocus, focusParent, toggleExpand: toggleExpandFocused, focusAll, expand };
+    actionsRef.current = { moveFocus, focusParent, toggleExpand: toggleExpandFocused, focusAll, expand, reload };
     return () => {
       actionsRef.current = null;
     };
-  }, [actionsRef, moveFocus, focusParent, toggleExpandFocused, focusAll, expand]);
+  }, [actionsRef, moveFocus, focusParent, toggleExpandFocused, focusAll, expand, reload]);
 
   // 左ペインがフォーカスされたら実 DOM フォーカスをツリールートへ当てる（起動直後を含む）。
   useEffect(() => {
@@ -323,6 +360,15 @@ export const FolderTree = ({
               onToggleExpand={() => folderId && handleToggle(folderId)}
               onSelectScope={() => handleSelectScope(row.kind === 'folder' ? folderId : null)}
               onRevealMore={() => row.kind === 'more' && handleReveal(row.parentId)}
+              onContextMenu={
+                onFolderContextMenu && row.kind === 'folder'
+                  ? ({ x, y }) =>
+                      // **スコープ（右ペインの絞り込み）は変えない**。右クリックは「メニューを開くだけ」の操作であり、
+                      // 削除するか決めていない段階で閲覧中の絞り込みを動かすと、Escape で取りやめても元に戻らない。
+                      // スコープが動くのは削除が実際に行われたときだけ（`resolveScopeAfterDelete`）。
+                      onFolderContextMenu({ folderId: row.folder.id, title: row.folder.title, depth: row.depth, x, y })
+                  : undefined
+              }
               registerRef={registerRef(key)}
             />
           );
@@ -332,4 +378,4 @@ export const FolderTree = ({
   );
 };
 
-export type { FolderTreeActions };
+export type { FolderTreeActions, FolderContextTarget };

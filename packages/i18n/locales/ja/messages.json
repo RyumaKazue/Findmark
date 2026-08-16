@@ -192,6 +192,39 @@
     "description": "$1 = number of moved bookmarks",
     "message": "$1件を移動しました"
   },
+  "popupFolderMenuDelete": {
+    "description": "Context menu item on a folder row in the left pane",
+    "message": "フォルダを削除"
+  },
+  "popupFolderMenuDeleteDisabled": {
+    "description": "Tooltip shown when the delete item is disabled (top-level folder)",
+    "message": "最上位のフォルダは削除できません"
+  },
+  "popupFolderDeleteConfirmTitle": {
+    "description": "$1 = folder title",
+    "message": "「$1」を削除します"
+  },
+  "popupFolderDeleteConfirmBody": {
+    "description": "$1 = number of bookmarks, $2 = number of subfolders",
+    "message": "中のブックマーク $1 件・フォルダ $2 件も一緒に削除されます。"
+  },
+  "popupFolderDeleteConfirmBodyUnknown": {
+    "description": "Shown instead of the count when the subtree could not be read",
+    "message": "中身の件数を確認できませんでした。中のブックマーク・フォルダも一緒に削除されます。"
+  },
+  "popupFolderDeleteConfirmAction": {
+    "message": "削除する"
+  },
+  "popupUndoFolderDeleted": {
+    "description": "$1 = folder title",
+    "message": "「$1」を削除しました"
+  },
+  "popupErrorFolderDeleteFailed": {
+    "message": "フォルダを削除できませんでした"
+  },
+  "popupErrorFolderUndoUnavailable": {
+    "message": "ゴミ箱への退避に失敗したため元に戻せません"
+  },
   "popupErrorEditFailed": {
     "message": "編集内容を保存できませんでした"
   },

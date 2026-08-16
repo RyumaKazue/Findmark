@@ -94,6 +94,20 @@ export class BookmarkService {
     return parentId;
   }
 
+  /**
+   * 部分木（`id` 自身 + 全子孫）を取得する。
+   *
+   * フォルダ削除（`folder-delete`）で、**削除する前に**ゴミ箱への退避データ（`TrashInput`）を
+   * 組み立てるために使う。削除後は当然ながらツリーを読めないため、順序が本メソッドの存在理由。
+   */
+  async getSubTree(id: string): Promise<BookmarkNode> {
+    const [node]: chrome.bookmarks.BookmarkTreeNode[] = await this.bookmarks.getSubTree(id);
+    if (!node) {
+      throw new Error(`BookmarkService: 対象のノードが見つかりません(id=${id})`);
+    }
+    return this.toDomain(node);
+  }
+
   /** ブックマーク/フォルダを作成する（`url` 未指定ならフォルダ）。 */
   async create(data: { url?: string; title: string; parentId: string }): Promise<BookmarkNode> {
     const created = await this.bookmarks.create(data);
@@ -115,9 +129,24 @@ export class BookmarkService {
     await this.bookmarks.move(id, { parentId });
   }
 
-  /** ブックマーク/フォルダを削除する。 */
+  /**
+   * ブックマーク1件（または**空の**フォルダ）を削除する。
+   *
+   * `chrome.bookmarks.remove` は**中身のあるフォルダを拒否する**（エラーを投げる）。
+   * フォルダを配下ごと消す場合は `removeTree` を使う（`folder-delete`）。
+   */
   async remove(id: string): Promise<void> {
     await this.bookmarks.remove(id);
+  }
+
+  /**
+   * フォルダを**配下ごと**削除する（`folder-delete`）。
+   *
+   * ブックマーク1件の削除は `remove` を使う。両者を1つのメソッドに畳まないのは、呼び出し側が
+   * 「1件だけ消すつもりが子孫ごと消えた」という取り違えを起こさないようにするため。
+   */
+  async removeTree(id: string): Promise<void> {
+    await this.bookmarks.removeTree(id);
   }
 
   /**

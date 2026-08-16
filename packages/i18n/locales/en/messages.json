@@ -192,6 +192,39 @@
     "description": "$1 = number of moved bookmarks",
     "message": "Moved $1 bookmarks"
   },
+  "popupFolderMenuDelete": {
+    "description": "Context menu item on a folder row in the left pane",
+    "message": "Delete folder"
+  },
+  "popupFolderMenuDeleteDisabled": {
+    "description": "Tooltip shown when the delete item is disabled (top-level folder)",
+    "message": "Top-level folders can't be deleted"
+  },
+  "popupFolderDeleteConfirmTitle": {
+    "description": "$1 = folder title",
+    "message": "Delete “$1”"
+  },
+  "popupFolderDeleteConfirmBody": {
+    "description": "$1 = number of bookmarks, $2 = number of subfolders",
+    "message": "Its $1 bookmarks and $2 folders will be deleted too."
+  },
+  "popupFolderDeleteConfirmBodyUnknown": {
+    "description": "Shown instead of the count when the subtree could not be read",
+    "message": "Couldn't check what's inside. Any bookmarks and folders in it will be deleted too."
+  },
+  "popupFolderDeleteConfirmAction": {
+    "message": "Delete"
+  },
+  "popupUndoFolderDeleted": {
+    "description": "$1 = folder title",
+    "message": "Deleted “$1”"
+  },
+  "popupErrorFolderDeleteFailed": {
+    "message": "Couldn't delete this folder"
+  },
+  "popupErrorFolderUndoUnavailable": {
+    "message": "Can't undo: the folder wasn't saved to Trash"
+  },
   "popupErrorEditFailed": {
     "message": "Couldn't save your changes"
   },

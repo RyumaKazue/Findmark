@@ -28,6 +28,12 @@ export interface UseSearchResult {
    * `SearchEngine` の索引をメモリ内更新した直後に呼び、再検索なしで表示へ即時反映する。
    */
   refresh: () => void;
+  /**
+   * 索引を作り直す（`folder-delete` のアンドゥ等、**復元でノードの ID が新規採番される**操作の後に使う）。
+   * `addNode` による部分更新では新しい ID を追随できず、索引と実データが食い違うため、全体を組み直す。
+   * 起動時と同じコスト（数百 ms 想定）だが、対象は低頻度の復元操作に限られる。
+   */
+  reloadIndex: () => Promise<void>;
 }
 
 /**
@@ -97,5 +103,16 @@ export const useSearch = (query: string, folderId: string | null): UseSearchResu
     setIndexVersion(v => v + 1);
   }, []);
 
-  return { results, isIndexReady, isSettled: debouncedQuery === query, updateAliases, refresh };
+  // 索引の再構築（`folder-delete` のアンドゥ後など）。失敗しても直前の索引を保ったまま継続する
+  // （次回起動時に構築し直されるため、ここで results を空にする方が害が大きい）。
+  const reloadIndex = useCallback(async () => {
+    try {
+      await searchEngine.loadIndex(bookmarkService, aliasStore);
+    } catch (e) {
+      console.error('[useSearch] 検索索引の再構築に失敗しました:', e);
+    }
+    setIndexVersion(v => v + 1);
+  }, []);
+
+  return { results, isIndexReady, isSettled: debouncedQuery === query, updateAliases, refresh, reloadIndex };
 };
