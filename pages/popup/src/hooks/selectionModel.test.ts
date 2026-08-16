@@ -1,4 +1,14 @@
-import { clear, emptySelection, isSelected, rangeTo, selectAll, toggle } from './selectionModel.js';
+import {
+  activate,
+  clear,
+  deactivate,
+  emptySelection,
+  isSelected,
+  rangeTo,
+  selectAll,
+  toggle,
+  toggleActive,
+} from './selectionModel.js';
 import { describe, expect, it } from 'vitest';
 
 const orderedIds = ['a', 'b', 'c', 'd', 'e'];
@@ -82,10 +92,19 @@ describe('selectAll（全件選択）', () => {
 });
 
 describe('clear（選択解除）', () => {
-  it('空の選択状態を返す', () => {
-    const next = clear();
+  it('選択と anchor を空にする', () => {
+    const next = clear(toggle(emptySelection, 'b'));
     expect(next.ids.size).toBe(0);
     expect(next.anchorId).toBeNull();
+  });
+
+  it('選択モードは保つ（クエリ/スコープ変更で選び直せるようにする）', () => {
+    const next = clear(toggle(emptySelection, 'b'));
+    expect(next.active).toBe(true);
+  });
+
+  it('通常モードで呼んでも通常モードのまま', () => {
+    expect(clear(emptySelection).active).toBe(false);
   });
 });
 
@@ -94,5 +113,81 @@ describe('isSelected', () => {
     const state = toggle(emptySelection, 'b');
     expect(isSelected(state, 'b')).toBe(true);
     expect(isSelected(state, 'a')).toBe(false);
+  });
+});
+
+describe('選択モード（active）', () => {
+  it('初期状態は通常モード', () => {
+    expect(emptySelection.active).toBe(false);
+  });
+
+  it('activate は選択を保ったままモードに入る', () => {
+    const next = activate({ ids: new Set(['a', 'b']), anchorId: 'a', active: false });
+    expect(next.active).toBe(true);
+    expect([...next.ids].sort()).toEqual(['a', 'b']);
+    expect(next.anchorId).toBe('a');
+  });
+
+  it('activate は既にモード中なら同一参照を返す（無用な再レンダーを避ける）', () => {
+    const active = activate(emptySelection);
+    expect(activate(active)).toBe(active);
+  });
+
+  it('deactivate は選択・anchor・モードをすべて初期化する', () => {
+    const next = deactivate();
+    expect(next.ids.size).toBe(0);
+    expect(next.anchorId).toBeNull();
+    expect(next.active).toBe(false);
+  });
+
+  it('toggleActive は OFF→ON で選択を保持する', () => {
+    const next = toggleActive(emptySelection);
+    expect(next.active).toBe(true);
+  });
+
+  it('toggleActive は ON→OFF で選択も捨てる', () => {
+    const selected = toggle(emptySelection, 'b');
+    const next = toggleActive(selected);
+    expect(next.active).toBe(false);
+    expect(next.ids.size).toBe(0);
+  });
+});
+
+describe('不変条件: 選択があるなら必ず選択モード', () => {
+  it('toggle は通常モードからでもモードへ入る（Ctrl/Cmd+クリック）', () => {
+    const next = toggle(emptySelection, 'b');
+    expect(next.active).toBe(true);
+  });
+
+  it('rangeTo は通常モードからでもモードへ入る（Shift+クリック）', () => {
+    expect(rangeTo(emptySelection, 'c', orderedIds).active).toBe(true);
+    const anchored = toggle(emptySelection, 'b');
+    expect(rangeTo(anchored, 'd', orderedIds).active).toBe(true);
+  });
+
+  it('selectAll は通常モードからでもモードへ入る（Ctrl/Cmd+A）', () => {
+    expect(selectAll(orderedIds).active).toBe(true);
+  });
+
+  it('最後の1件を外して0件になってもモードは維持する（次のクリックが「開く」に化けない）', () => {
+    const selected = toggle(emptySelection, 'b');
+    const next = toggle(selected, 'b');
+    expect(next.ids.size).toBe(0);
+    expect(next.active).toBe(true);
+  });
+
+  it('どの操作の後も ids が非空なら active は true', () => {
+    const states = [
+      toggle(emptySelection, 'b'),
+      rangeTo(toggle(emptySelection, 'b'), 'd', orderedIds),
+      selectAll(orderedIds),
+      clear(selectAll(orderedIds)),
+      activate(emptySelection),
+      deactivate(),
+    ];
+    // 選択が残っている状態だけを見る（空になる操作は不変条件の対象外＝モードの有無を問わない）。
+    for (const state of states.filter(s => s.ids.size > 0)) {
+      expect(state.active).toBe(true);
+    }
   });
 });

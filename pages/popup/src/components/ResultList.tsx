@@ -51,11 +51,11 @@ interface ResultListProps {
   onDeleteRow?: (index: number) => void;
   /** 指定インデックスの行でドラッグを開始する候補（mousedown・U12）。 */
   onRowMouseDown?: (index: number, e: MouseEvent) => void;
-  /** 1件以上選択中で、全行が常時チェックボックス表示になっているか（U13）。 */
-  selectionActive?: boolean;
+  /** 選択モード中か（行クリック＝選択・全行がチェックボックス表示になる・`selection-mode`）。 */
+  selectionMode?: boolean;
   /** 選択中のブックマーク ID 集合（各行の checked 判定に使う・U13）。 */
   selectedIds?: ReadonlySet<string>;
-  /** 指定インデックスの行の選択をトグルする（チェックボックス/Ctrl/Cmd+クリック・U13）。 */
+  /** 指定インデックスの行の選択をトグルする（行クリック（選択モード中）/Ctrl/Cmd+クリック）。 */
   onToggleSelect?: (index: number) => void;
   /** 指定インデックスの行まで範囲選択する（Shift+クリック・U13）。 */
   onRangeSelect?: (index: number) => void;
@@ -88,7 +88,7 @@ export const ResultList = ({
   onCancelEdit,
   onDeleteRow,
   onRowMouseDown,
-  selectionActive = false,
+  selectionMode = false,
   selectedIds,
   onToggleSelect,
   onRangeSelect,
@@ -181,7 +181,7 @@ export const ResultList = ({
                     onDelete={onDeleteRow ? () => onDeleteRow(index) : undefined}
                     onDragStart={onRowMouseDown ? e => onRowMouseDown(index, e) : undefined}
                     checked={selectedIds?.has(item.node.id) ?? false}
-                    selectionActive={selectionActive}
+                    selectionMode={selectionMode}
                     onToggleSelect={onToggleSelect ? () => onToggleSelect(index) : undefined}
                     onRangeSelect={onRangeSelect ? () => onRangeSelect(index) : undefined}
                   />
