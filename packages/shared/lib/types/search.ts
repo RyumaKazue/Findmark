@@ -11,7 +11,8 @@ export interface SearchQuery {
   keywords: string[];
   /**
    * フォルダスコープ。照合対象ではなく範囲フィルタとして適用する。
-   * 未指定（`undefined`）は「すべて」＝全ブックマークが対象。指定時は当該フォルダの直下のみが対象。
+   * 未指定（`undefined`）は「すべて」＝全ブックマークが対象。指定時は当該フォルダの**配下すべて**
+   * （直下 + サブフォルダの中身）が対象（`folder-scope-descendants`。旧仕様は「直下のみ」）。
    */
   folderScope?: FolderScope;
 }
@@ -39,7 +40,8 @@ export interface SearchResultItem {
 
 /**
  * フォルダスコープの範囲指定。照合対象ではなく範囲フィルタとして適用する。
- * 指定時は常に当該フォルダの直下のみが対象（サブフォルダは含めない）。
+ * 指定時は当該フォルダの**配下すべて**が対象（サブフォルダの中身を含む・`folder-scope-descendants`）。
+ * ブラウズ（クエリなし）では直下のブックマークがサブフォルダ内のものより上に並ぶ。
  */
 export interface FolderScope {
   /** スコープ対象フォルダの ID（ID で保持する。フォルダ名に "/" を含んでも壊れない）。 */

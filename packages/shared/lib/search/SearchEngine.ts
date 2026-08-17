@@ -31,6 +31,14 @@ interface SearchEntry {
   node: BookmarkNode;
   /** 上位→末端のフォルダ名(表示用。真のルートは含まない)。 */
   folderPath: string[];
+  /**
+   * 上位→末端のフォルダ **ID**(スコープ判定用。`folderPath` と同じ長さ・同じ並び。真のルートは含まない)。
+   *
+   * 名前ではなく ID で持つのは、同名フォルダが別階層にあるときに取り違えないため
+   * (`開発/資料` と `記事/資料` を区別する)。「内部的にフォルダIDを保持し、フォルダ名に `/` が
+   * 含まれても壊れない」という PRD 機能5 の方針とも一致する(`folder-scope-descendants`)。
+   */
+  folderIdPath: string[];
   /** 別名(原文)。 */
   aliases: string[];
   /** 正規化済みタイトル。 */
@@ -60,12 +68,21 @@ interface MatchAccumulator {
 export class SearchEngine {
   private entries: SearchEntry[] = [];
 
+  /**
+   * フォルダ ID → そのフォルダまでの ID パス(自身を含む)の索引(`folder-scope-descendants`)。
+   *
+   * `moveNode`/`addNode` は呼び出し側からフォルダ**名**のパスしか受け取らないため、移動/追加した
+   * エントリの `folderIdPath` をここから引く。中身が空のフォルダも含むため、空フォルダへの移動でも解決できる。
+   */
+  private folderIdPaths = new Map<string, string[]>();
+
   constructor(private readonly normalizer: SearchNormalizer) {}
 
   /** `bookmarkService`/`aliasStore` からデータを取得し、索引を再構築する。 */
   async loadIndex(bookmarkService: BookmarkTreeSource, aliasStore: AliasSource): Promise<void> {
     const [tree, aliasMap] = await Promise.all([bookmarkService.getTree(), aliasStore.getAll()]);
     this.entries = this.buildIndex(tree, aliasMap);
+    this.folderIdPaths = this.buildFolderIdPaths(tree);
   }
 
   /**
@@ -75,13 +92,14 @@ export class SearchEngine {
   buildIndex(tree: BookmarkNode[], aliasMap: Map<string, AliasRecord>): SearchEntry[] {
     const entries: SearchEntry[] = [];
 
-    const walk = (nodes: BookmarkNode[], folderPath: string[]): void => {
+    const walk = (nodes: BookmarkNode[], folderPath: string[], folderIdPath: string[]): void => {
       for (const node of nodes) {
         if (node.url !== undefined) {
           const aliases = this.lookupAliases(node.url, aliasMap);
           entries.push({
             node,
             folderPath,
+            folderIdPath,
             aliases,
             nTitle: this.normalizer.normalizeText(node.title),
             nFolders: folderPath.map(f => this.normalizer.normalizeText(f)),
@@ -95,15 +113,52 @@ export class SearchEngine {
         // 真のルート(parentId 無し)は自身のタイトルをパスに積まない(BookmarkService.getFolderPath と同じ意味論)。
         const isTrueRoot = node.parentId === undefined;
         if (isTrueRoot) {
-          walk(node.children, folderPath);
+          walk(node.children, folderPath, folderIdPath);
         } else {
-          walk(node.children, [...folderPath, node.title]);
+          // 名前と ID を同じ場所で積む(走査を増やさない。両者の長さ・並びは常に一致する)。
+          walk(node.children, [...folderPath, node.title], [...folderIdPath, node.id]);
         }
       }
     };
 
-    walk(tree, []);
+    walk(tree, [], []);
     return entries;
+  }
+
+  /**
+   * フォルダ ID → ID パス(自身を含む・真のルートは含まない)の対応表を作る(純粋)。
+   * `buildIndex` を純粋なまま保つため別の走査にしている(木の走査は O(n) で、索引構築1回あたりの
+   * コストとしては無視できる)。
+   */
+  private buildFolderIdPaths(tree: BookmarkNode[]): Map<string, string[]> {
+    const paths = new Map<string, string[]>();
+    const walk = (nodes: BookmarkNode[], folderIdPath: string[]): void => {
+      for (const node of nodes) {
+        if (node.url !== undefined || !node.children) {
+          continue;
+        }
+        // 真のルート(parentId 無し)は自身をパスに積まない(`buildIndex` と同じ意味論)。
+        if (node.parentId === undefined) {
+          walk(node.children, folderIdPath);
+          continue;
+        }
+        const next = [...folderIdPath, node.id];
+        paths.set(node.id, next);
+        walk(node.children, next);
+      }
+    };
+    walk(tree, []);
+    return paths;
+  }
+
+  /**
+   * フォルダ ID からその ID パス(自身を含む)を引く。索引構築後に新設されたフォルダ(ゴミ箱からの復元や
+   * `ensureFolderPath` による自動作成)は対応表に無いため、**直接の親だけを持つパス**にフォールバックする。
+   * この場合、そのフォルダ自身をスコープにした表示は正しく、より上位のフォルダをスコープにしたときだけ
+   * 次の索引再構築(ポップアップの開き直し・`reloadIndex`)まで漏れる。データは壊れない。
+   */
+  private resolveFolderIdPath(folderId: string): string[] {
+    return this.folderIdPaths.get(folderId) ?? [folderId];
   }
 
   /**
@@ -115,7 +170,10 @@ export class SearchEngine {
     const scoped = this.entries.filter(entry => this.inScope(entry, query.folderScope));
 
     if (keywords.length === 0) {
-      return this.sortResults(scoped.map(entry => this.toBrowseItem(entry)));
+      return this.sortBrowseResults(
+        scoped.map(entry => this.toBrowseItem(entry)),
+        query.folderScope?.folderId,
+      );
     }
 
     const matched = this.matchAll(scoped, keywords);
@@ -200,6 +258,9 @@ export class SearchEngine {
     entry.node = { ...entry.node, parentId };
     entry.folderPath = folderPath;
     entry.nFolders = folderPath.map(f => this.normalizer.normalizeText(f));
+    // スコープ判定は ID の祖先関係で行うため、移動時に ID パスも更新する(`folder-scope-descendants`)。
+    // これを忘れると、移動したのに旧階層のスコープに出続ける/新階層のスコープに出ない、という乖離になる。
+    entry.folderIdPath = this.resolveFolderIdPath(parentId);
   }
 
   /** 索引上のエントリを削除する(同期・U10)。`id` が一致するエントリが無ければ何もしない。 */
@@ -219,6 +280,8 @@ export class SearchEngine {
     this.entries.push({
       node,
       folderPath,
+      // 親を持たない(理論上のみ)場合は空パス＝どのフォルダスコープにも属さない。
+      folderIdPath: node.parentId === undefined ? [] : this.resolveFolderIdPath(node.parentId),
       aliases,
       nTitle: this.normalizer.normalizeText(node.title),
       nFolders: folderPath.map(f => this.normalizer.normalizeText(f)),
@@ -237,12 +300,19 @@ export class SearchEngine {
     }
   }
 
-  /** スコープ未指定(=「すべて」)は全件対象。指定時は当該フォルダの直下のみを対象とする。 */
+  /**
+   * スコープ未指定(=「すべて」)は全件対象。指定時は**当該フォルダの配下すべて**(直下 + サブフォルダの中身)を
+   * 対象とする(`folder-scope-descendants`)。
+   *
+   * 旧仕様は「直下のみ」だったが、フォルダを選んでも中身が見えない(実体がサブフォルダにある場合に右ペインが
+   * ほぼ空になる)・左ペインの件数バッジ(配下すべてを数える)と食い違う、という問題があったため改めた。
+   * 判定は**ID の祖先関係**で行う(同名フォルダの取り違えを避ける。`folderIdPath` の doc を参照)。
+   */
   private inScope(entry: SearchEntry, scope: FolderScope | undefined): boolean {
     if (!scope) {
       return true;
     }
-    return entry.node.parentId === scope.folderId;
+    return entry.folderIdPath.includes(scope.folderId);
   }
 
   /** 正規化 AND 部分一致。全キーワードが(いずれかのフィールドに)一致したエントリのみ返す。 */
@@ -390,6 +460,27 @@ export class SearchEngine {
   /** スコア降順、同点はタイトル昇順の安定ソート。 */
   private sortResults(items: SearchResultItem[]): SearchResultItem[] {
     return [...items].sort((a, b) => b.score - a.score || a.node.title.localeCompare(b.node.title));
+  }
+
+  /**
+   * ブラウズ(キーワードなし)の並び。スコープ指定時は**直下のブックマークを先頭グループ**に置き、
+   * サブフォルダ内のものを後続グループにする(`folder-scope-descendants`)。各グループ内は従来どおり
+   * タイトル昇順(ブラウズはスコアが一律のため実質タイトル順)。
+   *
+   * - **深さは2段階**にする(「直下」と「それ以外の配下すべて」)。孫とひ孫は区別せず、同じ後続グループの中で
+   *   タイトル昇順に並ぶ。階層の深さを並びへ細かく反映しても、同じフォルダの中身が離れて並ぶだけで利点が薄い。
+   * - スコープ未指定(「すべて」)ではグループ分けをしない(「直下」という基準が存在しないため)。
+   * - **キーワード検索ではこの関数を使わない**。検索は関連度で見つける操作であり、階層を優先すると
+   *   深い階層の強い一致(別名の完全一致など)が直下の弱い一致の下に埋もれるため(`sortResults` を使う)。
+   */
+  private sortBrowseResults(items: SearchResultItem[], directParentId: string | undefined): SearchResultItem[] {
+    if (directParentId === undefined) {
+      return this.sortResults(items);
+    }
+    const groupOf = (item: SearchResultItem): number => (item.node.parentId === directParentId ? 0 : 1);
+    return [...items].sort(
+      (a, b) => groupOf(a) - groupOf(b) || b.score - a.score || a.node.title.localeCompare(b.node.title),
+    );
   }
 }
 

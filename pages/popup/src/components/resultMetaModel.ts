@@ -29,7 +29,7 @@ interface ResultMetaInput {
  * |---|---|
  * | query あり・scope あり | `開発 / chrome の中から「docs」— 4件` |
  * | query あり・scope なし | `すべて の中から「docs」— 4件` |
- * | query なし・scope あり | `開発 / chrome の直下 — 5件` |
+ * | query なし・scope あり | `開発 / chrome の中 — 12件`（配下すべて・`folder-scope-descendants`） |
  * | query なし・scope なし | `null`（メタ行なし） |
  */
 const buildResultMetaLabel = (input: ResultMetaInput): LocalizedMessage | null => {

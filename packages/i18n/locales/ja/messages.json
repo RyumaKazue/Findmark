@@ -98,8 +98,8 @@
     "message": "$1 の中から「$2」— $3件"
   },
   "popupMetaScopedBrowse": {
-    "description": "$1 = scope path, $2 = result count",
-    "message": "$1 の直下 — $2件"
+    "description": "Meta line when browsing a folder scope ($1 = folder path, $2 = count). Covers the whole subtree.",
+    "message": "$1 の中 — $2件"
   },
   "popupRowMenuEdit": {
     "description": "Row context menu item: inline edit (title/URL)",
