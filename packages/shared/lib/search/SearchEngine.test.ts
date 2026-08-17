@@ -139,17 +139,54 @@ describe('SearchEngine — 照合フィールド(タイトル/フォルダ名/�
   });
 });
 
-describe('SearchEngine — folderScope(範囲フィルタ・常に直下のみ・照合対象からは除外)', () => {
-  it('指定フォルダの直下のみに絞る', async () => {
+describe('SearchEngine — folderScope(範囲フィルタ・配下すべて・照合対象からは除外)', () => {
+  // `folder-scope-descendants` で「直下のみ」→「配下すべて」へ仕様変更した。
+  // 旧テスト（`指定フォルダの直下のみに絞る` / `サブフォルダ配下は範囲に含まれない`）は、
+  // その仕様を固定していたものなので、期待値を新仕様へ更新している。
+  it('指定フォルダの配下すべて(直下 + サブフォルダの中身)を対象にする', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
     const results = engine.search({ keywords: [], folderScope: { folderId: '2' } });
-    expect(results.map(r => r.node.id)).toEqual(['11']);
+    // 11 = 開発の直下 / 12 = 開発/chrome の中。直下が先頭グループに来る（ブラウズ時の並び）。
+    expect(results.map(r => r.node.id)).toEqual(['11', '12']);
   });
 
-  it('サブフォルダ配下は範囲に含まれない(孫は対象外)', async () => {
+  it('孫フォルダをスコープにすると、その配下だけに絞られる(親の直下は含まない)', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
-    const results = engine.search({ keywords: [], folderScope: { folderId: '2' } });
-    expect(results.map(r => r.node.id)).not.toContain('12');
+    const results = engine.search({ keywords: [], folderScope: { folderId: '3' } });
+    expect(results.map(r => r.node.id)).toEqual(['12']);
+  });
+
+  it('同名フォルダが別階層にあっても混ざらない(名前ではなく ID で判定する)', async () => {
+    // ブックマーク バー(1) 直下に「資料」(20)、開発(2) の中にも「資料」(21) を置く。
+    const docA: BookmarkNode = { id: '30', parentId: '20', title: 'A of bar-shiryo', url: 'https://a.test/1' };
+    const docB: BookmarkNode = { id: '31', parentId: '21', title: 'B of dev-shiryo', url: 'https://b.test/1' };
+    const tree = [
+      {
+        id: '0',
+        title: '',
+        children: [
+          {
+            id: '1',
+            parentId: '0',
+            title: 'ブックマーク バー',
+            children: [
+              { id: '20', parentId: '1', title: '資料', children: [docA] },
+              {
+                id: '2',
+                parentId: '1',
+                title: '開発',
+                children: [{ id: '21', parentId: '2', title: '資料', children: [docB] }],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const engine = await buildEngine(tree);
+
+    expect(engine.search({ keywords: [], folderScope: { folderId: '20' } }).map(r => r.node.id)).toEqual(['30']);
+    expect(engine.search({ keywords: [], folderScope: { folderId: '21' } }).map(r => r.node.id)).toEqual(['31']);
   });
 
   it('フォルダ名に "/" を含んでいても範囲フィルタが壊れない', async () => {
@@ -169,6 +206,124 @@ describe('SearchEngine — folderScope(範囲フィルタ・常に直下のみ�
     const engine = await buildEngine(mainTree, mainAliases);
     const results = engine.search({ keywords: [] });
     expect(results.map(r => r.node.id).sort()).toEqual(['10', '11', '12', '13', '14', '15']);
+  });
+});
+
+describe('SearchEngine — ブラウズ時の並び(直下 → それ以外の配下・folder-scope-descendants)', () => {
+  /*
+   * 親(id:100)
+   *  ├ z-direct(id:110)      直下
+   *  ├ a-direct(id:111)      直下
+   *  ├ child(id:101)
+   *  │  ├ m-child(id:112)    孫
+   *  │  └ grand(id:102)
+   *  │     └ b-grand(id:113) ひ孫
+   *  └ other(id:103)
+   *     └ c-other(id:114)    孫
+   */
+  const nestedTree = [
+    {
+      id: '0',
+      title: '',
+      children: [
+        {
+          id: '1',
+          parentId: '0',
+          title: 'bar',
+          children: [
+            {
+              id: '100',
+              parentId: '1',
+              title: 'parent',
+              children: [
+                { id: '110', parentId: '100', title: 'z-direct', url: 'https://x.test/1' },
+                { id: '111', parentId: '100', title: 'a-direct', url: 'https://x.test/2' },
+                {
+                  id: '101',
+                  parentId: '100',
+                  title: 'child',
+                  children: [
+                    { id: '112', parentId: '101', title: 'm-child', url: 'https://x.test/3' },
+                    {
+                      id: '102',
+                      parentId: '101',
+                      title: 'grand',
+                      children: [{ id: '113', parentId: '102', title: 'b-grand', url: 'https://x.test/4' }],
+                    },
+                  ],
+                },
+                {
+                  id: '103',
+                  parentId: '100',
+                  title: 'other',
+                  children: [{ id: '114', parentId: '103', title: 'c-other', url: 'https://x.test/5' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it('直下のブックマークがサブフォルダ内のものより先に並ぶ', async () => {
+    const engine = await buildEngine(nestedTree);
+    const ids = engine.search({ keywords: [], folderScope: { folderId: '100' } }).map(r => r.node.id);
+    // 先頭2件が直下(110/111)、残りがサブフォルダ内(112/113/114)。
+    expect(ids.slice(0, 2).sort()).toEqual(['110', '111']);
+    expect(ids.slice(2).sort()).toEqual(['112', '113', '114']);
+  });
+
+  it('各グループ内はタイトル昇順', async () => {
+    const engine = await buildEngine(nestedTree);
+    const titles = engine.search({ keywords: [], folderScope: { folderId: '100' } }).map(r => r.node.title);
+    // 直下グループ: a-direct → z-direct / それ以外: b-grand → c-other → m-child
+    expect(titles).toEqual(['a-direct', 'z-direct', 'b-grand', 'c-other', 'm-child']);
+  });
+
+  it('孫とひ孫は深さで区別しない(2段階のグループ分け)', async () => {
+    const engine = await buildEngine(nestedTree);
+    const titles = engine.search({ keywords: [], folderScope: { folderId: '100' } }).map(r => r.node.title);
+    // ひ孫(b-grand)が孫(c-other/m-child)より前に来る＝深さではなくタイトル順で並んでいる。
+    expect(titles.indexOf('b-grand')).toBeLessThan(titles.indexOf('m-child'));
+  });
+
+  it('スコープ未指定(「すべて」)ではグループ分けせず全件タイトル昇順', async () => {
+    const engine = await buildEngine(nestedTree);
+    const titles = engine.search({ keywords: [] }).map(r => r.node.title);
+    expect(titles).toEqual(['a-direct', 'b-grand', 'c-other', 'm-child', 'z-direct']);
+  });
+
+  it('キーワード検索では階層ではなく関連度(スコア)順に並ぶ', async () => {
+    // 直下に部分一致(タイトル中間)、孫に完全一致を置く。関連度優先なら孫が先。
+    const tree = [
+      {
+        id: '0',
+        title: '',
+        children: [
+          {
+            id: '200',
+            parentId: '0',
+            title: 'root-folder',
+            children: [
+              { id: '210', parentId: '200', title: 'my mv3 memo', url: 'https://y.test/1' },
+              {
+                id: '201',
+                parentId: '200',
+                title: 'docs',
+                children: [{ id: '211', parentId: '201', title: 'mv3', url: 'https://y.test/2' }],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const engine = await buildEngine(tree);
+    const ids = engine.search({ keywords: ['mv3'], folderScope: { folderId: '200' } }).map(r => r.node.id);
+
+    // 211(孫・完全一致) が 210(直下・部分一致) より上。ブラウズ時のグループ分けは適用されない。
+    expect(ids).toEqual(['211', '210']);
   });
 });
 
@@ -386,15 +541,41 @@ describe('SearchEngine — moveNode(フォルダ移動の索引即時反映・U1
     expect(engine.search({ keywords: ['github'] })[0].folderPath).toEqual(['ブックマーク バー', '料理']);
   });
 
-  it('移動後はスコープ判定が新しい親フォルダで行われる', async () => {
+  it('移動後はスコープ判定が新しい階層で行われる(ID パスも更新される)', async () => {
     const engine = await buildEngine(mainTree, mainAliases);
-    // 移動前: 料理(id:4)直下スコープには GitHub は含まれない。
+    // 移動前: 料理(id:4)スコープには GitHub は含まれない。
     expect(engine.search({ keywords: [], folderScope: { folderId: '4' } }).some(r => r.node.id === '10')).toBe(false);
 
     engine.moveNode('10', '4', ['ブックマーク バー', '料理']);
 
-    // 移動後: 料理(id:4)直下スコープに現れ、元の親(id:1)直下からは外れる。
+    // 移動後: 料理(id:4)スコープに現れる。
     expect(engine.search({ keywords: [], folderScope: { folderId: '4' } }).some(r => r.node.id === '10')).toBe(true);
+    // 料理は「ブックマーク バー」(id:1)の中にあるため、上位スコープにも引き続き含まれる
+    // （`folder-scope-descendants` で配下すべてが対象になったため。旧仕様では「直下から外れる」を期待していた）。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '1' } }).some(r => r.node.id === '10')).toBe(true);
+  });
+
+  it('別階層へ移動すると、移動元のスコープからは外れる', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // 開発(id:2)スコープには 11(直下) と 12(chrome の中) が含まれる。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '2' } }).map(r => r.node.id)).toEqual(['11', '12']);
+
+    // 12 を料理(id:4)へ移動すると、開発スコープからは消える。
+    engine.moveNode('12', '4', ['ブックマーク バー', '料理']);
+
+    expect(engine.search({ keywords: [], folderScope: { folderId: '2' } }).map(r => r.node.id)).toEqual(['11']);
+    expect(engine.search({ keywords: [], folderScope: { folderId: '4' } }).some(r => r.node.id === '12')).toBe(true);
+  });
+
+  it('索引構築後に新設されたフォルダへ移動した場合も、そのフォルダのスコープでは見える(既知の劣化)', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+
+    engine.moveNode('10', 'ghost-999', ['ブックマーク バー', '新設']);
+
+    expect(engine.search({ keywords: [], folderScope: { folderId: 'ghost-999' } }).some(r => r.node.id === '10')).toBe(
+      true,
+    );
+    // 祖先は対応表に無いため辿れない（`resolveFolderIdPath` のフォールバック。次の索引再構築で解消する）。
     expect(engine.search({ keywords: [], folderScope: { folderId: '1' } }).some(r => r.node.id === '10')).toBe(false);
   });
 
@@ -451,5 +632,42 @@ describe('SearchEngine — addNode(削除アンドゥ・現在ページ登録の
     const byAlias = engine.search({ keywords: ['しんき'] });
     expect(byAlias.map(r => r.node.id)).toEqual(['99']);
     expect(byAlias[0].matchedAliases).toEqual(['しんき']);
+  });
+
+  it('追加したエントリは祖先フォルダのスコープにも現れる(ID パスが解決される)', async () => {
+    const engine = await buildEngine(mainTree, mainAliases);
+    // 開発(2) > chrome(3) の中へ追加する。
+    const node: BookmarkNode = { id: '98', parentId: '3', title: 'Added in chrome', url: 'https://added.example.com' };
+
+    engine.addNode(node, ['ブックマーク バー', '開発', 'chrome'], []);
+
+    // 直接の親(3)だけでなく、祖先(2)のスコープでも見える（`folder-scope-descendants`）。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '3' } }).some(r => r.node.id === '98')).toBe(true);
+    expect(engine.search({ keywords: [], folderScope: { folderId: '2' } }).some(r => r.node.id === '98')).toBe(true);
+    // 無関係なフォルダ(4 = 料理)のスコープには現れない。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '4' } }).some(r => r.node.id === '98')).toBe(false);
+  });
+
+  it('索引構築後に新設されたフォルダへ追加した場合、そのフォルダのスコープでは見えるが祖先スコープでは漏れる(既知の劣化)', async () => {
+    // `resolveFolderIdPath` のフォールバック（`[folderId]` のみ）の動作を固定する。
+    // ゴミ箱からの復元や `ensureFolderPath` による自動作成で、索引に無いフォルダが親になりうる。
+    // データは壊れず、次の索引再構築（ポップアップの開き直し・reloadIndex）で解消する、という割り切り。
+    const engine = await buildEngine(mainTree, mainAliases);
+    const node: BookmarkNode = {
+      id: '97',
+      parentId: 'ghost-999',
+      title: 'In new folder',
+      url: 'https://ghost.example.com',
+    };
+
+    engine.addNode(node, ['ブックマーク バー', '新設'], []);
+
+    expect(engine.search({ keywords: [], folderScope: { folderId: 'ghost-999' } }).some(r => r.node.id === '97')).toBe(
+      true,
+    );
+    // 祖先（ブックマーク バー = 1）は対応表に無いため辿れない。
+    expect(engine.search({ keywords: [], folderScope: { folderId: '1' } }).some(r => r.node.id === '97')).toBe(false);
+    // 「すべて」（スコープ未指定）では従来どおり見える＝行方不明にはならない。
+    expect(engine.search({ keywords: [] }).some(r => r.node.id === '97')).toBe(true);
   });
 });

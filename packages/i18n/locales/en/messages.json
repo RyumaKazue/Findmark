@@ -98,8 +98,8 @@
     "message": "“$2” in $1 — $3 results"
   },
   "popupMetaScopedBrowse": {
-    "description": "$1 = scope path, $2 = result count",
-    "message": "Directly in $1 — $2 items"
+    "description": "Meta line when browsing a folder scope ($1 = folder path, $2 = count). Covers the whole subtree.",
+    "message": "In $1 — $2 items"
   },
   "popupRowMenuEdit": {
     "description": "Row context menu item: inline edit (title/URL)",
