@@ -10,6 +10,16 @@ export interface UseFolderActionsApi {
    * `folderPath` は削除するフォルダ自身の**親までのパス**（＝復元先）。戻り値は成功したか。
    */
   deleteFolder: (args: { id: string; title: string; folderPath: string[] }) => Promise<boolean>;
+  /**
+   * フォルダの名前を変更する（`folder-rename-create`）。戻り値は成功したか。
+   * 配下ブックマークのフォルダパス表示とフォルダ名照合に波及するため、成功時は検索索引を作り直す。
+   */
+  renameFolder: (args: { id: string; title: string }) => Promise<boolean>;
+  /**
+   * `parentId` の直下に空フォルダを作る（`folder-rename-create`）。戻り値は作成したフォルダの ID（失敗時 null）。
+   * 呼び出し側はこの ID をスコープに設定する（作成の結果が左右のペインに即座に現れるようにするため）。
+   */
+  createFolder: (args: { parentId: string; title: string }) => Promise<string | null>;
   /** 直近の操作失敗（danger トースト用）。 */
   error: string | null;
   /** エラートーストを閉じる。 */
@@ -28,6 +38,11 @@ export interface UseFolderActionsApi {
  *
  * `refresh`/`register` は `useRowActions` と同じく呼び出し側から注入する（`useUndo` の購読を
  * Popup と共有するため）。`reloadIndex`/`reloadFolders` は復元後の整合に使う（後述）。
+ *
+ * **5秒アンドゥを登録するのは削除だけ**（`folder-rename-create`）。名前変更・新規作成には登録しない。
+ * 既存の規律（`useRowActions` も破壊的な `deleteRow`/`moveRow` にのみ登録し、リネームの `editRow` には
+ * 登録していない）に合わせる。どちらも同じ右クリックメニューから即座に取り消せる（もう一度名前を変える /
+ * 作った空フォルダを削除する）ため、第2の取り消し経路を増やす価値が薄い。
  */
 export const useFolderActions = (
   refresh: () => void,
@@ -133,7 +148,58 @@ export const useFolderActions = (
     [refresh, register, reloadIndex, reloadFolders, t],
   );
 
+  const renameFolder = useCallback(
+    async ({ id, title }: { id: string; title: string }) => {
+      try {
+        await bookmarkService.rename(id, title);
+      } catch (e) {
+        console.error('[useFolderActions] フォルダ名の変更に失敗しました:', e);
+        setError(t('popupErrorFolderRenameFailed'));
+        // 実データが変わっていない以上、索引・左ペインには一切触れない（表示と実データの乖離を作らない）。
+        return false;
+      }
+
+      // 索引エントリは配下ブックマークごとに `folderPath`（行のパス表示）と `nFolders`（フォルダ名の照合語）を
+      // 持つ。フォルダ名の変更は配下**全エントリ**へ波及するため、`moveNode` のような部分更新では追随できない。
+      // 失敗してもリネーム自体は成功しているので操作は成功扱いにする（索引は次回起動で作り直される）。
+      try {
+        await reloadIndex();
+      } catch (e) {
+        console.error('[useFolderActions] 名前変更後の索引再構築に失敗しました:', e);
+      }
+      reloadFolders();
+      return true;
+    },
+    [reloadIndex, reloadFolders, t],
+  );
+
+  const createFolder = useCallback(
+    async ({ parentId, title }: { parentId: string; title: string }) => {
+      let created;
+      try {
+        created = await bookmarkService.create({ title, parentId });
+      } catch (e) {
+        console.error('[useFolderActions] フォルダの作成に失敗しました:', e);
+        setError(t('popupErrorFolderCreateFailed'));
+        return null;
+      }
+      // 作られたフォルダは空なので**索引エントリ**は増えない。それでも索引を作り直すのは、`SearchEngine` が
+      // 別に持つ `folderIdPaths`（フォルダ ID → 祖先 ID パス）を更新するため。これを更新しないと、作った直後の
+      // フォルダへブックマークを移した際に `moveNode` の ID パス解決がフォールバック（自分1つだけのパス）に
+      // 倒れ、**祖先フォルダをスコープにしたときにそのブックマークが出ない**（`folder-scope-descendants` の
+      // 配下判定は ID パスの包含で行うため）。失敗はログのみ（作成自体は成功しており、次回起動で整合する）。
+      try {
+        await reloadIndex();
+      } catch (e) {
+        console.error('[useFolderActions] 作成後の索引再構築に失敗しました:', e);
+      }
+      reloadFolders();
+      return created.id;
+    },
+    [reloadIndex, reloadFolders, t],
+  );
+
   const clearError = useCallback(() => setError(null), []);
 
-  return { deleteFolder, error, clearError };
+  return { deleteFolder, renameFolder, createFolder, error, clearError };
 };
