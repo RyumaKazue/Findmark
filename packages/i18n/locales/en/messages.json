@@ -198,6 +198,18 @@
     "description": "$1 = number of moved bookmarks",
     "message": "Moved $1 bookmarks"
   },
+  "popupFolderMenuCreate": {
+    "description": "Context menu item on a folder row: create a subfolder inside it",
+    "message": "New folder"
+  },
+  "popupFolderMenuRename": {
+    "description": "Context menu item on a folder row: rename it",
+    "message": "Rename"
+  },
+  "popupFolderMenuRenameDisabled": {
+    "description": "Tooltip shown when the rename item is disabled (top-level folder)",
+    "message": "Top-level folders can't be renamed"
+  },
   "popupFolderMenuDelete": {
     "description": "Context menu item on a folder row in the left pane",
     "message": "Delete folder"
@@ -221,9 +233,35 @@
   "popupFolderDeleteConfirmAction": {
     "message": "Delete"
   },
+  "popupFolderRenameTitle": {
+    "description": "Prompt dialog heading when renaming a folder ($1 = current folder title)",
+    "message": "Rename “$1”"
+  },
+  "popupFolderCreateTitle": {
+    "description": "Prompt dialog heading when creating a subfolder ($1 = parent folder title)",
+    "message": "New folder in “$1”"
+  },
+  "popupFolderNameLabel": {
+    "description": "Label of the folder name input in the prompt dialog",
+    "message": "Folder name"
+  },
+  "popupFolderCreateAction": {
+    "description": "Confirm button of the create-folder dialog (rename reuses commonSave)",
+    "message": "Create"
+  },
   "popupUndoFolderDeleted": {
     "description": "$1 = folder title",
     "message": "Deleted “$1”"
+  },
+  "popupErrorFolderNameRequired": {
+    "description": "Validation message when the folder name is empty or whitespace only",
+    "message": "Enter a folder name"
+  },
+  "popupErrorFolderRenameFailed": {
+    "message": "Couldn't rename this folder"
+  },
+  "popupErrorFolderCreateFailed": {
+    "message": "Couldn't create the folder"
   },
   "popupErrorFolderDeleteFailed": {
     "message": "Couldn't delete this folder"

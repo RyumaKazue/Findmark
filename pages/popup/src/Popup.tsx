@@ -9,10 +9,12 @@ import { ConfirmDialog } from '@src/components/ConfirmDialog';
 import { ContextMenu } from '@src/components/ContextMenu';
 import { DragGhost } from '@src/components/DragGhost';
 import { countContents, resolveScopeAfterDelete } from '@src/components/folderDeleteModel';
+import { buildFolderMenuItems, planRename, validateFolderTitle } from '@src/components/folderMenuModel';
 import { FolderTree } from '@src/components/FolderTree';
 import { collectAncestorIds, compressPath, findFolderPath, findParentId } from '@src/components/folderTreeModel';
 import { MovePanel } from '@src/components/MovePanel';
 import { PopupShell } from '@src/components/PopupShell';
+import { PromptDialog } from '@src/components/PromptDialog';
 import { ResultList } from '@src/components/ResultList';
 import { buildResultMetaLabel } from '@src/components/resultMetaModel';
 import { buildRowMenuItems, canOpenRowMenu } from '@src/components/rowMenuModel';
@@ -52,10 +54,12 @@ import type { AliasEditorActions } from '@src/components/AliasEditor';
 import type { ConfirmDialogActions } from '@src/components/ConfirmDialog';
 import type { ContextMenuActions } from '@src/components/ContextMenu';
 import type { FolderContents } from '@src/components/folderDeleteModel';
+import type { FolderMenuKey } from '@src/components/folderMenuModel';
 import type { FolderContextTarget, FolderTreeActions } from '@src/components/FolderTree';
 import type { FolderTreeNode } from '@src/components/folderTreeModel';
 import type { CommitPlan } from '@src/components/inlineEditModel';
 import type { MovePanelActions } from '@src/components/MovePanel';
+import type { PromptDialogActions } from '@src/components/PromptDialog';
 import type { RowMenuKey } from '@src/components/rowMenuModel';
 import type { FocusArea, ListFocus } from '@src/hooks/modeMachine';
 
@@ -72,7 +76,16 @@ const SESSION_SAVE_DEBOUNCE_MS = 200;
  * 1つで済ませる（variant が増えても排他条件は増えない）。
  */
 type ContextAction =
-  | { kind: 'folder-menu'; folderId: string; title: string; deletable: boolean; x: number; y: number }
+  | { kind: 'folder-menu'; folderId: string; title: string; isTopLevel: boolean; x: number; y: number }
+  | {
+      /** フォルダ名の入力（`folder-rename-create`）。名前変更と新規作成が同じ `PromptDialog` を使う。 */
+      kind: 'folder-prompt';
+      /** `rename` = `folderId` の名前を変える / `create` = `folderId` の**直下**に作る。 */
+      intent: 'rename' | 'create';
+      folderId: string;
+      /** rename: 現在の名前（入力欄の初期値）/ create: 親フォルダの名前（見出しの文言用）。 */
+      title: string;
+    }
   | {
       kind: 'folder-confirm';
       folderId: string;
@@ -143,6 +156,7 @@ const Popup = () => {
   const [contextAction, setContextAction] = useState<ContextAction | null>(null);
   const contextMenuActionsRef = useRef<ContextMenuActions | null>(null);
   const confirmDialogActionsRef = useRef<ConfirmDialogActions | null>(null);
+  const promptDialogActionsRef = useRef<PromptDialogActions | null>(null);
   // ── U13: 複数選択と一括操作 ── 選択はフォーカス（selectedIndex）・モード・スコープと直交する独立状態。
   // `mode` と同様に個々の値へ分解する（オブジェクトそのものを依存配列に含めると毎レンダー新規参照になり
   // 意図せぬ再実行を招くため。`toggle`/`rangeTo`/`selectAll`/`clear` は `useSelection` 内で安定参照）。
@@ -567,7 +581,9 @@ const Popup = () => {
         kind: 'folder-menu',
         folderId: target.folderId,
         title: target.title,
-        deletable: target.depth > 0,
+        // 最上位（depth 0 = ブックマーク バー等）は Chrome 自身が名前変更・削除を拒否する。項目の無効判定は
+        // `folderMenuModel.buildFolderMenuItems` が担うため、ここでは判定材料だけを持たせる。
+        isTopLevel: target.depth === 0,
         x: target.x,
         y: target.y,
       });
@@ -595,12 +611,22 @@ const Popup = () => {
   );
 
   // メニューの項目実行。「削除」は中身の有無で分岐する（空なら即削除・中身ありは確認ダイアログへ差し替え）。
+  // 「名前を変更」「新しいフォルダ」は同じ `PromptDialog`（`folder-prompt`）へ差し替える（PANEL のまま。
+  // メニュー → 確認ダイアログと同じ遷移の形にし、閉じる導線も `closeContextAction` に一本化する）。
   const handleFolderMenuSelect = useCallback(
     async (key: string) => {
-      if (key !== 'delete' || contextAction?.kind !== 'folder-menu') {
+      if (contextAction?.kind !== 'folder-menu') {
         return;
       }
       const { folderId, title } = contextAction;
+      const menuKey = key as FolderMenuKey;
+      if (menuKey === 'rename' || menuKey === 'create') {
+        setContextAction({ kind: 'folder-prompt', intent: menuKey, folderId, title });
+        return;
+      }
+      if (menuKey !== 'delete') {
+        return;
+      }
       // 復元先は「削除するフォルダ自身の親までのパス」。`findFolderPath` は対象自身を含めて返すため末尾を落とす。
       const folderPath = findFolderPath(folders, folderId).slice(0, -1);
       let contents: FolderContents;
@@ -630,6 +656,51 @@ const Popup = () => {
     const { folderId, title, folderPath } = contextAction;
     void runFolderDelete(folderId, title, folderPath);
   }, [contextAction, runFolderDelete]);
+
+  // ── folder-rename-create: 名前入力ダイアログの確定 ──
+
+  // 入力値の検証・トリムは純粋モデル（`folderMenuModel`）が持ち、ここは手順の実行だけを担う。
+  // ダイアログは**先に閉じる**（削除と同じ規律）。閉じてから非同期の chrome API を待つことで、処理中に
+  // 同じダイアログをもう一度確定できてしまう二重実行を防ぐ。
+  const handleFolderPromptConfirm = useCallback(
+    (value: string) => {
+      if (contextAction?.kind !== 'folder-prompt') {
+        return;
+      }
+      const { intent, folderId, title } = contextAction;
+      if (intent === 'rename') {
+        const plan = planRename(title, value);
+        if (plan.type === 'invalid') {
+          // `PromptDialog` 側が空入力の確定を無効にしているため通常は到達しない。到達した場合は
+          // **ダイアログも閉じない**（下の `create` 分岐と同じ扱い。何も更新していないのにダイアログだけ
+          // 消えると、変更されたのか取りやめられたのか分からなくなる）。
+          return;
+        }
+        // `unchanged` は chrome API も索引の再構築も呼ばずに閉じるだけ（AC-8）。
+        closeContextAction();
+        if (plan.type === 'update') {
+          void folderActions.renameFolder({ id: folderId, title: plan.title });
+        }
+        return;
+      }
+      if (!validateFolderTitle(value).ok) {
+        return;
+      }
+      closeContextAction();
+      void folderActions.createFolder({ parentId: folderId, title: value.trim() }).then(createdId => {
+        if (createdId === null) {
+          return;
+        }
+        // 作成の結果を左右のペインへ即座に出す。左ペインの木は `reloadFolders` の完了待ちで、この時点では
+        // 新しいフォルダをまだ含まない。そのためスコープ変更時の祖先自動展開（`collectAncestorIds`）は
+        // 初回空振りする。**親の展開だけは現在の木で解決できる**ため明示的に呼び、木が届いた後は既存の
+        // effect が新しい ID の祖先を解決して整合する。
+        folderTreeActionsRef.current?.expand(folderId);
+        setScopeFolderId(createdId);
+      });
+    },
+    [contextAction, closeContextAction, folderActions],
+  );
 
   // ── row-context-menu: 結果行の右クリックメニュー ──
 
@@ -685,6 +756,18 @@ const Popup = () => {
     },
     [contextAction, enterInlineEditAt, enterAliasEditAt, handleDeleteAt, exitToList, enterPanel],
   );
+
+  // フォルダメニューの表示ラベルと、無効時の理由（`folderMenuModel` はどちらも持たない。文言の解決はここ）。
+  const folderMenuLabels: Record<FolderMenuKey, string> = {
+    create: t('popupFolderMenuCreate'),
+    rename: t('popupFolderMenuRename'),
+    delete: t('popupFolderMenuDelete'),
+  };
+  const folderMenuDisabledHints: Record<FolderMenuKey, string | undefined> = {
+    create: undefined, // 常に有効（最上位フォルダの直下にもサブフォルダは作れる）
+    rename: t('popupFolderMenuRenameDisabled'),
+    delete: t('popupFolderMenuDeleteDisabled'),
+  };
 
   // 行メニューの表示ラベル（`rowMenuModel` はラベルを持たず、キー → 文言の対応はここで解決する）。
   // 「削除」は既存の `commonDelete` を流用する（フォルダ側の「フォルダを削除」と対になる文言）。
@@ -888,22 +971,30 @@ const Popup = () => {
         // それぞれの命令ハンドルへ流す。確認ダイアログはボタンが**横並び**のため `←→` も同じ移動として扱う
         // （`resolveKeyIntent` は縦リスト前提で `↑↓` しか候補移動に割り当てないため、ここで補う）。
         if (contextAction !== null) {
-          // メニュー（フォルダ/行）は同じ命令ハンドルを共用する（同時に開かないため1つで足りる）。
-          const handle =
-            contextAction.kind === 'folder-confirm' ? confirmDialogActionsRef.current : contextMenuActionsRef.current;
           const folderIntent = resolveKey(e, listFocus);
-          if (
-            folderIntent === 'panel:candidate-up' ||
-            (contextAction.kind === 'folder-confirm' && e.key === 'ArrowLeft')
-          ) {
+          // 名前入力ダイアログ（`folder-rename-create`）は候補移動を持たないため、`confirm`/`close` だけを流す。
+          // **矢印キーは横取りしない**（動かす候補が無いうえ、preventDefault すると入力欄内のカーソル移動まで
+          // 潰れる）。通常は入力欄が Enter/Escape を stopPropagation するためここへは届かず、DOM フォーカスが
+          // 入力欄から外れている経路（背景クリック直後など）の保険として働く。
+          if (contextAction.kind === 'folder-prompt') {
+            if (folderIntent === 'panel:confirm') {
+              e.preventDefault();
+              promptDialogActionsRef.current?.confirm();
+            } else if (folderIntent === 'panel:close') {
+              e.preventDefault();
+              promptDialogActionsRef.current?.close();
+            }
+            return;
+          }
+          // メニュー（フォルダ/行）は同じ命令ハンドルを共用する（同時に開かないため1つで足りる）。
+          const isConfirm = contextAction.kind === 'folder-confirm';
+          const handle = isConfirm ? confirmDialogActionsRef.current : contextMenuActionsRef.current;
+          if (folderIntent === 'panel:candidate-up' || (isConfirm && e.key === 'ArrowLeft')) {
             e.preventDefault();
             handle?.selectPrev();
             return;
           }
-          if (
-            folderIntent === 'panel:candidate-down' ||
-            (contextAction.kind === 'folder-confirm' && e.key === 'ArrowRight')
-          ) {
+          if (folderIntent === 'panel:candidate-down' || (isConfirm && e.key === 'ArrowRight')) {
             e.preventDefault();
             handle?.selectNext();
             return;
@@ -1344,24 +1435,40 @@ const Popup = () => {
           actionsRef={addCurrentActionsRef}
         />
       )}
-      {/* フォルダの右クリックメニュー（folder-delete）。PANEL モードを他パネルと共用するため、
-          描画条件は `contextAction` の種別で排他にする。 */}
+      {/* フォルダの右クリックメニュー（folder-delete で導入・folder-rename-create で3項目へ）。PANEL モードを
+          他パネルと共用するため、描画条件は `contextAction` の種別で排他にする。項目の並びと無効条件は
+          `folderMenuModel` が決め、ここではキー → 表示ラベル（i18n）の対応だけを与える（行メニューと同じ形）。 */}
       {mode.mode === 'PANEL' && contextAction?.kind === 'folder-menu' && (
         <ContextMenu
           x={contextAction.x}
           y={contextAction.y}
-          items={[
-            {
-              key: 'delete',
-              label: t('popupFolderMenuDelete'),
-              danger: true,
-              disabled: !contextAction.deletable,
-              disabledHint: t('popupFolderMenuDeleteDisabled'),
-            },
-          ]}
+          items={buildFolderMenuItems({ isTopLevel: contextAction.isTopLevel }).map(spec => ({
+            ...spec,
+            label: folderMenuLabels[spec.key],
+            disabledHint: folderMenuDisabledHints[spec.key],
+          }))}
           onSelect={key => void handleFolderMenuSelect(key)}
           onClose={closeContextAction}
           actionsRef={contextMenuActionsRef}
+        />
+      )}
+      {/* フォルダ名の入力（folder-rename-create）。名前変更と新規作成が同じダイアログを共用し、
+          見出し・初期値・確定ラベルだけを `intent` で切り替える。 */}
+      {mode.mode === 'PANEL' && contextAction?.kind === 'folder-prompt' && (
+        <PromptDialog
+          title={
+            contextAction.intent === 'rename'
+              ? t('popupFolderRenameTitle', contextAction.title)
+              : t('popupFolderCreateTitle', contextAction.title)
+          }
+          inputLabel={t('popupFolderNameLabel')}
+          initialValue={contextAction.intent === 'rename' ? contextAction.title : ''}
+          // 名前変更は「既存の名前を書き換える」のが主用途のため全選択して開く（InlineEdit と同じ）。
+          selectOnFocus={contextAction.intent === 'rename'}
+          confirmLabel={contextAction.intent === 'rename' ? t('commonSave') : t('popupFolderCreateAction')}
+          onConfirm={handleFolderPromptConfirm}
+          onCancel={closeContextAction}
+          actionsRef={promptDialogActionsRef}
         />
       )}
       {/* 結果行の右クリックメニュー（row-context-menu）。項目の並びは `rowMenuModel` が決め、ここでは

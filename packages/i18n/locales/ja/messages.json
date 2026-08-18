@@ -198,6 +198,18 @@
     "description": "$1 = number of moved bookmarks",
     "message": "$1件を移動しました"
   },
+  "popupFolderMenuCreate": {
+    "description": "Context menu item on a folder row: create a subfolder inside it",
+    "message": "新しいフォルダ"
+  },
+  "popupFolderMenuRename": {
+    "description": "Context menu item on a folder row: rename it",
+    "message": "名前を変更"
+  },
+  "popupFolderMenuRenameDisabled": {
+    "description": "Tooltip shown when the rename item is disabled (top-level folder)",
+    "message": "最上位のフォルダは名前を変更できません"
+  },
   "popupFolderMenuDelete": {
     "description": "Context menu item on a folder row in the left pane",
     "message": "フォルダを削除"
@@ -221,9 +233,35 @@
   "popupFolderDeleteConfirmAction": {
     "message": "削除する"
   },
+  "popupFolderRenameTitle": {
+    "description": "Prompt dialog heading when renaming a folder ($1 = current folder title)",
+    "message": "「$1」の名前を変更"
+  },
+  "popupFolderCreateTitle": {
+    "description": "Prompt dialog heading when creating a subfolder ($1 = parent folder title)",
+    "message": "「$1」の中に新しいフォルダを作成"
+  },
+  "popupFolderNameLabel": {
+    "description": "Label of the folder name input in the prompt dialog",
+    "message": "フォルダ名"
+  },
+  "popupFolderCreateAction": {
+    "description": "Confirm button of the create-folder dialog (rename reuses commonSave)",
+    "message": "作成"
+  },
   "popupUndoFolderDeleted": {
     "description": "$1 = folder title",
     "message": "「$1」を削除しました"
+  },
+  "popupErrorFolderNameRequired": {
+    "description": "Validation message when the folder name is empty or whitespace only",
+    "message": "フォルダ名を入力してください"
+  },
+  "popupErrorFolderRenameFailed": {
+    "message": "フォルダ名を変更できませんでした"
+  },
+  "popupErrorFolderCreateFailed": {
+    "message": "フォルダを作成できませんでした"
   },
   "popupErrorFolderDeleteFailed": {
     "message": "フォルダを削除できませんでした"
